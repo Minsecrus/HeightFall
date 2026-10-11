@@ -24,6 +24,7 @@ public partial class Main : Node3D
 
     public override void _Ready()
     {
+        GameFonts.Install();
         _world = new World(StandardMap.Build());
         var map = _world.Map;
         Unit[] heroes = [_world.SpawnHero(Heroes.Bastion, Viewer), _world.SpawnHero(Heroes.Falcon, Viewer)];
@@ -60,7 +61,7 @@ public partial class Main : Node3D
         });
         player = new PlayerController { World = _world, Camera = rig.Camera, Overlay = overlay, Viewer = Viewer, Heroes = heroes };
         AddChild(player);
-        AddChild(new Hud { World = _world, Player = player, Viewer = Viewer });
+        AddChild(new Hud { World = _world, Player = player, CameraRig = rig, Units = units, Viewer = Viewer });
 
         ApplyCommandLine(rig);
     }

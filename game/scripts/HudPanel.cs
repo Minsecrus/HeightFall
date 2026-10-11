@@ -1,74 +1,88 @@
+using System;
 using Godot;
 using HeightFall.Sim;
 
 namespace HeightFall.Game;
 
-/// <summary>
-/// 底部中央的英雄面板：等级圆（外圈是经验环，阵亡时显示复活倒计时）、血条、蓝条、6 格物品和金钱。
-/// </summary>
+/// <summary>左上角金币入口；两端都点击这里打开同一个 Godot 商店。</summary>
 public partial class HudPanel : Control
 {
-    public const float PanelWidth = 560f;
-    public const float PanelHeight = 84f;
-
-    const float LevelRadius = 26f;
-    const float ItemSize = 28f;
-    const float ItemGap = 4f;
-    static readonly Vector2 LevelCenter = new(44, 42);
-    static readonly Rect2 HpBar = new(86, 18, 300, 22);
-    static readonly Rect2 ManaBar = new(86, 46, 300, 10);
-    static readonly Vector2 ItemsOrigin = new(404, 12);
-
-    static readonly Color Background = new(1f, 1f, 1f, 0.92f);
-    static readonly Color Border = new("#D9D9D7");
-    static readonly Color Track = new("#ECECEA");
+    public const float PanelWidth = 170f;
+    public const float PanelHeight = 64f;
+    public const float TouchWidth = 170f;
+    public const float TouchHeight = 84f;
 
     public World World { get; set; } = null!;
     public PlayerController Player { get; set; } = null!;
+    public bool TouchMode { get; set; }
+    public event Action? ShopRequested;
+    int _finger = -1;
+    Vector2 _press;
+    long _cancelSerial;
 
+    public override void _Ready() => MouseFilter = MouseFilterEnum.Stop;
     public override void _Process(double delta) => QueueRedraw();
+
+    public override void _GuiInput(InputEvent @event)
+    {
+        if (TouchMode && @event is InputEventMouse { Device: -1 })
+        {
+            AcceptEvent();
+            return;
+        }
+        if (@event is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left })
+        {
+            AcceptEvent();
+            ShopRequested?.Invoke();
+        }
+    }
+
+    public override void _Input(InputEvent @event)
+    {
+        if (!TouchMode || !IsVisibleInTree())
+            return;
+        if (@event is InputEventScreenTouch touch)
+        {
+            var local = GetGlobalTransformWithCanvas().AffineInverse() * touch.Position;
+            if (touch.Index == _finger)
+            {
+                if (!touch.Pressed || touch.Canceled)
+                {
+                    _finger = -1;
+                    if (!touch.Canceled && TouchPlatform.ReadCancelSerial() == _cancelSerial
+                        && new Rect2(Vector2.Zero, Size).HasPoint(local) && local.DistanceTo(_press) < 24)
+                        ShopRequested?.Invoke();
+                }
+                GetViewport().SetInputAsHandled();
+            }
+            else if (touch.Pressed && !touch.Canceled && _finger < 0 && new Rect2(Vector2.Zero, Size).HasPoint(local))
+            {
+                _finger = touch.Index;
+                _press = local;
+                _cancelSerial = TouchPlatform.ReadCancelSerial();
+                GetViewport().SetInputAsHandled();
+            }
+        }
+        else if (@event is InputEventScreenDrag drag && drag.Index == _finger)
+            GetViewport().SetInputAsHandled();
+    }
+
+    public void CancelGesture() => _finger = -1;
+
+    public override void _Notification(int what)
+    {
+        if ((long)what is NotificationWMWindowFocusOut or NotificationApplicationFocusOut or NotificationApplicationPaused)
+            CancelGesture();
+    }
 
     public override void _Draw()
     {
-        var hero = Player.Hero;
-        var font = ThemeDB.FallbackFont;
-        DrawRect(new Rect2(0, 0, PanelWidth, PanelHeight), Background);
-        DrawRect(new Rect2(0, 0, PanelWidth, PanelHeight), Border, filled: false);
-
-        DrawCircle(LevelCenter, LevelRadius, Colors.White);
-        DrawArc(LevelCenter, LevelRadius, 0, Mathf.Tau, 48, Border, 1.5f, true);
-        var xp = hero.Xp / (float)GameRules.XpToNext(hero.Level);
-        DrawArc(LevelCenter, LevelRadius + 6, 0, Mathf.Tau, 48, Track, 4f, true);
-        if (xp > 0)
-            DrawArc(LevelCenter, LevelRadius + 6, -Mathf.Pi / 2, -Mathf.Pi / 2 + Mathf.Tau * xp, 48, Palette.Ally, 4f, true);
-        var levelText = hero.IsDead ? $"{Mathf.CeilToInt(SimTime.Seconds(hero.RespawnTicks))}" : $"{hero.Level}";
-        DrawString(font, LevelCenter + new Vector2(-LevelRadius, 8), levelText, HorizontalAlignment.Center, LevelRadius * 2, 22,
-            hero.IsDead ? Palette.Enemy : Palette.Neutral);
-
-        DrawBar(HpBar, hero.Hp / hero.MaxHp, Palette.Ally, $"{Mathf.CeilToInt(hero.Hp)} / {Mathf.CeilToInt(hero.MaxHp)}");
-        DrawBar(ManaBar, hero.MaxMana > 0 ? hero.Mana / hero.MaxMana : 0, Palette.Mana, null);
-
-        for (var row = 0; row < 2; row++)
-        for (var col = 0; col < 3; col++)
-        {
-            var slot = new Rect2(ItemsOrigin + new Vector2(col * (ItemSize + ItemGap), row * (ItemSize + ItemGap)), ItemSize, ItemSize);
-            DrawRect(slot, Border, filled: false);
-        }
-
-        var goldAt = new Vector2(ItemsOrigin.X + 3 * (ItemSize + ItemGap) + 12, LevelCenter.Y);
-        DrawColoredPolygon(
-        [
-            goldAt + new Vector2(0, -7), goldAt + new Vector2(6, 0), goldAt + new Vector2(0, 7), goldAt + new Vector2(-6, 0),
-        ], Palette.Gold);
-        DrawString(font, goldAt + new Vector2(12, 6), $"{hero.Gold}", fontSize: 16, modulate: Palette.Neutral);
-    }
-
-    void DrawBar(Rect2 rect, float fraction, Color fill, string? label)
-    {
-        DrawRect(rect, Track);
-        DrawRect(new Rect2(rect.Position, rect.Size.X * Mathf.Clamp(fraction, 0f, 1f), rect.Size.Y), fill);
-        if (label is not null)
-            DrawString(ThemeDB.FallbackFont, rect.Position + new Vector2(0, rect.Size.Y - 5), label,
-                HorizontalAlignment.Center, rect.Size.X, 13, Colors.White);
+        var center = new Vector2(29, Size.Y / 2);
+        DrawRect(new Rect2(Vector2.Zero, Size), new Color(1, 1, 1, _finger >= 0 ? 0.94f : 0.7f));
+        DrawCircle(center, 13, Palette.Gold);
+        DrawArc(center, 9, 0, Mathf.Tau, 32, new Color(1, 1, 1, 0.65f), 1.5f, true);
+        DrawLine(center + new Vector2(0, -6), center + new Vector2(0, 6), Colors.White, 2, true);
+        DrawString(ThemeDB.FallbackFont, new Vector2(54, Size.Y / 2 + 11), $"{Player.Hero.Gold}",
+            fontSize: TouchMode ? 34 : 28, modulate: Palette.Neutral);
     }
 }

@@ -6,9 +6,11 @@ public sealed class Unit
 {
     /// <summary>召唤师技能所在的技能栏位，排在英雄自身的 4 个技能之后。</summary>
     public const int SummonerSlot = 4;
+    public const int InventoryCapacity = 6;
 
     internal readonly int[] SkillLevelValues;
     internal readonly int[] CooldownValues;
+    internal readonly List<ItemDef> ItemValues = [];
 
     internal Unit(int id, UnitDef def, Team team, GridPos pos)
     {
@@ -18,6 +20,7 @@ public sealed class Unit
         Pos = PrevPos = AirborneFrom = pos;
         SkillLevelValues = new int[def.Skills.Count + 1];
         CooldownValues = new int[def.Skills.Count + 1];
+        Items = ItemValues.AsReadOnly();
         if (def.Kind == UnitKind.Hero)
             SkillPoints = 1;
         Hp = MaxHp;
@@ -56,6 +59,7 @@ public sealed class Unit
     public int Xp { get; internal set; }
 
     public int Gold { get; internal set; }
+    public IReadOnlyList<ItemDef> Items { get; }
     public int Kills { get; internal set; }
     public int Deaths { get; internal set; }
     public int LastHits { get; internal set; }
@@ -122,13 +126,18 @@ public sealed class Unit
     public bool IsStunned => StunTicks > 0;
     public bool IsRecalling => RecallTicks > 0;
     public bool IsRestoring => RestoreTicks > 0;
-    public float MoveSpeed => Def.MoveSpeed * (1 + (SpeedBonusTicks > 0 ? SpeedBonus : 0));
+    public float MoveSpeed => (Def.MoveSpeed + ItemValues.Sum(item => item.MoveSpeedBonus))
+        * (1 + (SpeedBonusTicks > 0 ? SpeedBonus : 0));
     public bool IsCasting => CastTicksLeft >= 0;
 
-    public float MaxHp => (Def.MaxHp + Def.HpPerLevel * (Level - 1)) * StatScale;
-    public float MaxMana => Def.MaxMana + Def.ManaPerLevel * (Level - 1);
-    public float Damage => (Def.Damage + Def.DamagePerLevel * (Level - 1)) * StatScale;
-    public float Armor => Def.Armor + Def.ArmorPerLevel * (Level - 1);
+    public float MaxHp => (Def.MaxHp + Def.HpPerLevel * (Level - 1)) * StatScale
+        + ItemValues.Sum(item => item.HpBonus);
+    public float MaxMana => Def.MaxMana + Def.ManaPerLevel * (Level - 1)
+        + ItemValues.Sum(item => item.ManaBonus);
+    public float Damage => (Def.Damage + Def.DamagePerLevel * (Level - 1)) * StatScale
+        + ItemValues.Sum(item => item.DamageBonus);
+    public float Armor => Def.Armor + Def.ArmorPerLevel * (Level - 1)
+        + ItemValues.Sum(item => item.ArmorBonus);
 
     /// <summary>格子坐标系中的中心点，格子 (x, y) 的中心是 (x + 0.5, y + 0.5)。</summary>
     public Vector2 Center => new(Pos.X + Size / 2f, Pos.Y + Size / 2f);

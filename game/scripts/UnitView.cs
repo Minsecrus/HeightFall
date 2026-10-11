@@ -6,7 +6,7 @@ using HeightFall.Sim;
 namespace HeightFall.Game;
 
 /// <summary>
-/// 单位、建筑和投射物的渲染：单位是白色几何体，建筑按阵营上色，头顶血条区分敌我。
+/// 单位、建筑和投射物的渲染：单位是白色几何体，建筑按阵营上色，英雄头顶显示等级、生命和能量。
 /// 泉水没有模型，由 MapView 给格子染色。每帧按逻辑状态同步，并在两个逻辑帧之间插值。
 /// 受击时闪一下并被压扁再弹回，近战攻击时向目标冲一下，眩晕时头顶有小四面体绕圈。
 /// </summary>
@@ -17,6 +17,13 @@ public partial class UnitView : Node3D
     const float FlashSeconds = 0.14f;
     const float LungeSeconds = 0.16f;
     const float LungeDistance = 0.3f;
+    const float HealthBarOffset = 0.45f;
+    const float HeroHealthBarOffset = 0.65f;
+    // 相机俯角为 60°，世界竖距投到屏幕后约减半，需留出两条 billboard 的间隔。
+    const float ManaBarSpacing = 0.36f;
+    const float LevelBadgeDiameter = 0.36f;
+    const float LevelBadgeGap = 0.04f;
+    const int LevelBadgeTextureSize = 128;
 
     readonly Dictionary<int, Visual> _units = [];
     readonly Dictionary<int, MeshInstance3D> _projectiles = [];
@@ -28,16 +35,22 @@ public partial class UnitView : Node3D
     Mesh _bigProjectileMesh = null!;
     Mesh _stunMesh = null!;
     Mesh _unitCube = null!;
+    ImageTexture _levelBadgeTexture = null!;
     double _time;
 
     public World World { get; set; } = null!;
     public Team Viewer { get; set; } = Team.Heights;
+    public bool TouchMode { get; set; }
 
     sealed class Visual(Node3D root, Node3D body, HealthBar? bar, Node3D? spinner, float height)
     {
         public Node3D Root { get; } = root;
         public Node3D Body { get; } = body;
         public HealthBar? Bar { get; } = bar;
+        public HealthBar? ManaBar { get; set; }
+        public Node3D? LevelBadge { get; set; }
+        public Label3D? LevelLabel { get; set; }
+        public int DisplayedLevel { get; set; } = -1;
 
         /// <summary>建筑上缓慢旋转、上下浮动的部件。</summary>
         public Node3D? Spinner { get; } = spinner;
@@ -71,6 +84,7 @@ public partial class UnitView : Node3D
         _bigProjectileMesh = new SphereMesh { Radius = 0.18f, Height = 0.36f, RadialSegments = 8, Rings = 4 };
         _stunMesh = MeshUtil.Tetrahedron(0.1f);
         _unitCube = new BoxMesh { Size = Vector3.One };
+        _levelBadgeTexture = CreateLevelBadgeTexture();
     }
 
     /// <summary>受击：闪一下，并被压扁再弹回。</summary>
@@ -136,6 +150,7 @@ public partial class UnitView : Node3D
     void Sync(GameMap map, Unit u, Visual v, float frac, float delta)
     {
         v.Root.Visible = !u.IsDead;
+        UpdateHeroStatus(u, v);
         if (u.IsDead)
             return;
         v.Root.Position = WorldSpace.UnitPosition(map, u, frac);
@@ -170,6 +185,94 @@ public partial class UnitView : Node3D
             var wobble = u.IsStunned ? Mathf.Sin(t * 25f) * 0.2f : 0f;
             v.Body.Rotation = new Vector3(0, v.Yaw, wobble);
         }
+    }
+
+    void UpdateHeroStatus(Unit u, Visual v)
+    {
+        if (!u.IsHero) return;
+        var visible = u.MaxMana > 0f && u.IsAlive;
+        if (visible && v.ManaBar is null)
+        {
+            v.ManaBar = new HealthBar
+            {
+                Width = v.Bar?.Width ?? 1f,
+                BarColor = Palette.Mana,
+                Position = new Vector3(0, v.Height + HeroHealthBarOffset - ManaBarSpacing, 0),
+            };
+            v.Root.AddChild(v.ManaBar);
+        }
+        if (v.Bar is { } health)
+            health.Position = new Vector3(0, v.Height + HeroHealthBarOffset, 0);
+        if (v.ManaBar is { } mana)
+        {
+            mana.Visible = visible;
+            if (visible)
+                mana.SetFill(u.Mana / u.MaxMana);
+        }
+        if (v.LevelBadge is null)
+            CreateLevelBadge(v);
+        var right = GetViewport().GetCamera3D()?.GlobalTransform.Basis.X ?? Vector3.Right;
+        v.LevelBadge!.Position = new Vector3(0, v.Height + HeroHealthBarOffset, 0)
+            - right * ((v.Bar?.Width ?? 1f) / 2f + LevelBadgeDiameter / 2f + LevelBadgeGap);
+        v.LevelBadge.Visible = u.IsAlive;
+        if (v.DisplayedLevel != u.Level)
+        {
+            v.DisplayedLevel = u.Level;
+            v.LevelLabel!.Text = u.Level.ToString();
+        }
+    }
+
+    void CreateLevelBadge(Visual v)
+    {
+        var badge = new Node3D();
+        badge.AddChild(new Sprite3D
+        {
+            Texture = _levelBadgeTexture,
+            PixelSize = LevelBadgeDiameter / LevelBadgeTextureSize,
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FixedSize = false,
+            NoDepthTest = true,
+            Shaded = false,
+            RenderPriority = 1,
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+        });
+        var label = new Label3D
+        {
+            Font = ThemeDB.FallbackFont,
+            FontSize = 48,
+            PixelSize = 0.0038f,
+            Modulate = Colors.White,
+            OutlineSize = 0,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
+            FixedSize = false,
+            NoDepthTest = true,
+            Shaded = false,
+            RenderPriority = 2,
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+        };
+        badge.AddChild(label);
+        v.Root.AddChild(badge);
+        v.LevelBadge = badge;
+        v.LevelLabel = label;
+    }
+
+    static ImageTexture CreateLevelBadgeTexture()
+    {
+        using var image = Image.CreateEmpty(LevelBadgeTextureSize, LevelBadgeTextureSize, false, Image.Format.Rgba8);
+        var center = (LevelBadgeTextureSize - 1) / 2f;
+        var radius = center - 1f;
+        var black = new Color("#17191C");
+        for (var y = 0; y < LevelBadgeTextureSize; y++)
+        for (var x = 0; x < LevelBadgeTextureSize; x++)
+        {
+            var distance = new Vector2(x - center, y - center).Length();
+            var alpha = Mathf.Clamp(radius + 0.5f - distance, 0f, 1f);
+            var rim = Mathf.Clamp(distance - (radius - 6f), 0f, 1f);
+            image.SetPixel(x, y, black.Lerp(Palette.Gold, rim) with { A = alpha });
+        }
+        return ImageTexture.CreateFromImage(image);
     }
 
     /// <summary>闪光期间给模型叠一层受击色，并沿竖直方向压扁后弹回。</summary>
@@ -297,7 +400,7 @@ public partial class UnitView : Node3D
             {
                 Width = barWidth,
                 BarColor = Palette.ForTeam(u.Team, Viewer),
-                Position = new Vector3(0, height + 0.45f, 0),
+                Position = new Vector3(0, height + HealthBarOffset, 0),
             };
             root.AddChild(bar);
         }

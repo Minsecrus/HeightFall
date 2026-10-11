@@ -13,6 +13,8 @@ public partial class TopBar : Control
     public World World { get; set; } = null!;
     public PlayerController Player { get; set; } = null!;
     public Team Viewer { get; set; } = Team.Heights;
+    public bool TouchMode { get; set; }
+    public Vector4 SafeInsets { get; set; }
 
     public override void _Process(double delta) => QueueRedraw();
 
@@ -21,26 +23,31 @@ public partial class TopBar : Control
         var font = ThemeDB.FallbackFont;
         var width = GetViewportRect().Size.X;
         var mid = width / 2;
+        var y = TouchMode ? SafeInsets.Y : 0;
+        DrawSetTransform(new Vector2(0, y));
 
         var seconds = (int)World.Seconds;
-        DrawString(font, new Vector2(mid - 40, 26), $"{seconds / 60:00}:{seconds % 60:00}", HorizontalAlignment.Center, 80, 18,
+        var timeSize = TouchMode ? 26 : 18;
+        var baseline = TouchMode ? 32 : 26;
+        DrawString(font, new Vector2(mid - (TouchMode ? 46 : 40), baseline), $"{seconds / 60:00}:{seconds % 60:00}", HorizontalAlignment.Center, TouchMode ? 92 : 80, timeSize,
             Palette.Neutral);
-        DrawScore(new Vector2(mid - 52, 26), World.TeamKills(Viewer), Palette.Ally, alignRight: true);
-        DrawScore(new Vector2(mid + 52, 26), World.TeamKills(Viewer.Opponent()), Palette.Enemy, alignRight: false);
+        DrawScore(new Vector2(mid - (TouchMode ? 64 : 52), baseline), World.TeamKills(Viewer), Palette.Ally, alignRight: true);
+        DrawScore(new Vector2(mid + (TouchMode ? 64 : 52), baseline), World.TeamKills(Viewer.Opponent()), Palette.Enemy, alignRight: false);
 
         var hero = Player.Hero;
-        var x = width - 200;
+        var x = width - (TouchMode ? 278 : 200) - (TouchMode ? SafeInsets.Z : 0);
         DrawCross(new Vector2(x, 20));
-        DrawString(font, new Vector2(x + 12, 26), $"{hero.Kills} / {hero.Deaths}", fontSize: 15, modulate: Palette.Neutral);
-        DrawRect(new Rect2(x + 86, 14, 12, 12), Palette.Neutral);
-        DrawString(font, new Vector2(x + 106, 26), $"{hero.LastHits} / {hero.Denies}", fontSize: 15, modulate: Palette.Neutral);
+        DrawString(font, new Vector2(x + 12, baseline), $"{hero.Kills} / {hero.Deaths}", fontSize: TouchMode ? 24 : 15, modulate: Palette.Neutral);
+        var lastHitX = TouchMode ? 138 : 86;
+        DrawRect(new Rect2(x + lastHitX, 14, 12, 12), Palette.Neutral);
+        DrawString(font, new Vector2(x + lastHitX + 20, baseline), $"{hero.LastHits} / {hero.Denies}", fontSize: TouchMode ? 24 : 15, modulate: Palette.Neutral);
     }
 
     /// <summary>击杀数紧贴中间的时间，队伍色小方块在外侧。</summary>
     void DrawScore(Vector2 anchor, int kills, Color color, bool alignRight)
     {
         const float boxSize = 10f;
-        const float fontSize = 18;
+        var fontSize = TouchMode ? 26 : 18;
         var font = ThemeDB.FallbackFont;
         var text = $"{kills}";
         var width = font.GetStringSize(text, HorizontalAlignment.Left, -1, (int)fontSize).X;

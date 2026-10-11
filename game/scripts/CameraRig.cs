@@ -26,6 +26,7 @@ public partial class CameraRig : Node3D
     bool _dragging;
     Vector2 _dragLast;
     float _shake;
+    bool _uiBlocked;
 
     public Camera3D Camera { get; private set; } = null!;
 
@@ -35,6 +36,20 @@ public partial class CameraRig : Node3D
     public bool Locked { get; set; } = true;
     public Rect2 Bounds { get; set; }
     public bool EdgeScroll { get; set; } = true;
+    public bool TouchMode { get; set; }
+    public bool UiBlocked
+    {
+        get => _uiBlocked;
+        set
+        {
+            _uiBlocked = value;
+            if (value)
+            {
+                _dragging = false;
+                _mouseInWindow = false;
+            }
+        }
+    }
 
     public override void _Ready()
     {
@@ -75,6 +90,17 @@ public partial class CameraRig : Node3D
             _shake = 0f;
         }
 
+        if (UiBlocked)
+            return;
+
+        if (TouchMode)
+        {
+            _dragging = false;
+            if (Follow is not null)
+                Focus(_target.Lerp(Follow(), 1f - Mathf.Exp(-FollowSharpness * (float)delta)));
+            return;
+        }
+
         var keys = Vector2.Zero;
         if (Input.IsKeyPressed(Key.Left)) keys.X -= 1;
         if (Input.IsKeyPressed(Key.Right)) keys.X += 1;
@@ -111,12 +137,14 @@ public partial class CameraRig : Node3D
 
     public override void _Input(InputEvent e)
     {
+        if (TouchMode || UiBlocked) return;
         if (e is InputEventMouseMotion)
             _mouseInWindow = true;
     }
 
     public override void _UnhandledInput(InputEvent e)
     {
+        if (TouchMode || UiBlocked) return;
         switch (e)
         {
             case InputEventMouseButton { ButtonIndex: MouseButton.Middle } middle:

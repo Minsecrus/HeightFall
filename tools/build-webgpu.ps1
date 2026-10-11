@@ -33,6 +33,7 @@ try {
         'Emdawn.txt' = '.engine-cache/emdawnwebgpu/emdawnwebgpu_pkg/webgpu/src/LICENSE'
         'Emdawn-cpp.txt' = '.engine-cache/emdawnwebgpu/emdawnwebgpu_pkg/webgpu_cpp/LICENSE'
         'WebGPU-native.txt' = 'engine/licenses/webgpu-native.txt'
+        'Noto-CJK-OFL.txt' = 'game/fonts/OFL.txt'
     }
     foreach ($entry in $licenses.GetEnumerator()) {
         Copy-Item -LiteralPath (Join-Path $repoRoot $entry.Value) -Destination (Join-Path $licenseDir $entry.Key) -Force
