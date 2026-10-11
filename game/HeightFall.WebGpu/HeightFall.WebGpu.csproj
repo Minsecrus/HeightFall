@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <WasmNativeDebugSymbols Condition="'$(Configuration)' == 'Release'">false</WasmNativeDebugSymbols>
+    <!-- Keep local render-debug iterations short; Release keeps the SDK's optimized link. -->
+    <EmccLinkOptimizationFlag Condition="'$(Configuration)' == 'Debug'">-O0</EmccLinkOptimizationFlag>
+    <RootNamespace>HeightFall.WebGpu</RootNamespace>
+    <GodotProjectDir>..</GodotProjectDir>
+    <WasmAppDir>$(MSBuildProjectDirectory)/AppBundle</WasmAppDir>
+    <TwoDogRemoveDuplicateGodotAnalyzers>true</TwoDogRemoveDuplicateGodotAnalyzers>
+    <TwoDogWebVariant>release</TwoDogWebVariant>
+    <TwoDogWebExportPreset>WebGPU</TwoDogWebExportPreset>
+    <!-- Always use the locally built WebGPU engine, never the NuGet WebGL payload. -->
+    <TwoDogWebNativeDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '../../.engine-cache/2dog/godot/bin/web/template_release'))</TwoDogWebNativeDir>
+    <TwoDogWebGpuEmdawnDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '../../.engine-cache/emdawnwebgpu'))</TwoDogWebGpuEmdawnDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="TwoDogWebBoot.cs" />
+    <PackageReference Include="2dog.engine" Version="$(TwoDogVersion)" />
+    <PackageReference Include="2dog.browser-wasm" Version="[$(TwoDogNativesVersion)]" />
+    <ProjectReference Include="../HeightFall.csproj" AdditionalProperties="HeightFallWebGpu=true" />
+    <TrimmerRootAssembly Include="HeightFall" />
+    <TrimmerRootAssembly Include="$(TargetName)" />
+    <!-- Use the same verified Emdawn object and JS bridge as the native build. -->
+    <NativeLibrary Include="$(TwoDogWebGpuEmdawnDir)webgpu.o" />
+    <_HeightFallWebGpuJsLibrary Include="$(TwoDogWebGpuEmdawnDir)emdawnwebgpu_pkg/webgpu/src/library_webgpu_enum_tables.js" />
+    <_HeightFallWebGpuJsLibrary Include="$(TwoDogWebGpuEmdawnDir)emdawnwebgpu_pkg/webgpu/src/library_webgpu_generated_struct_info.js" />
+    <_HeightFallWebGpuJsLibrary Include="$(TwoDogWebGpuEmdawnDir)emdawnwebgpu_pkg/webgpu/src/library_webgpu_generated_sig_info.js" />
+    <_HeightFallWebGpuJsLibrary Include="$(TwoDogWebGpuEmdawnDir)emdawnwebgpu_pkg/webgpu/src/library_webgpu.js" />
+    <TwoDogGodotEmccExtraLDFlag Include="@(_HeightFallWebGpuJsLibrary->'--js-library &quot;%(FullPath)&quot;'->Replace('\', '/'))" />
+    <TwoDogGodotEmccExtraLDFlag Include="--closure-args=&quot;--externs=$([System.String]::Copy('$(TwoDogWebGpuEmdawnDir)emdawnwebgpu_pkg/webgpu/src/webgpu-externs.js').Replace('\', '/'))&quot;" />
+  </ItemGroup>
+  <Target Name="ValidateHeightFallWebGpuConfiguration" BeforeTargets="Restore;PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="'$(HeightFallWebGpu)' != 'true'" Text="Build the Godot WebGPU host with -p:HeightFallWebGpu=true so the game restores the browser bindings into its separate output directory." />
+  </Target>
+  <Target Name="ValidateHeightFallWebGpuNative" BeforeTargets="TwoDogWebCheckNativeDir;PrepareForBuild" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(TwoDogWebNativeDir)libgodot/libgodot.a') Or !Exists('$(TwoDogWebNativeDir)shell/godot.js')" Text="The custom Godot WebGPU native engine has not been built at $(TwoDogWebNativeDir). Run the WebGPU engine build first. The packaged Compatibility engine cannot be substituted." />
+    <Error Condition="!Exists('$(TwoDogWebGpuEmdawnDir)webgpu.o') Or !Exists('$(TwoDogWebGpuEmdawnDir)emdawnwebgpu_pkg/webgpu/src/library_webgpu.js')" Text="The verified Emdawn WebGPU object or JS bridge is missing at $(TwoDogWebGpuEmdawnDir). Prepare the WebGPU engine toolchain before publishing." />
+    <Error Condition="!Exists('%(_HeightFallWebGpuJsLibrary.Identity)')" Text="A required Emdawn JS bridge is missing: %(_HeightFallWebGpuJsLibrary.Identity). Prepare the WebGPU engine toolchain before publishing." />
+    <Error Condition="!Exists('$(TwoDogWebGpuEmdawnDir)emdawnwebgpu_pkg/webgpu/src/webgpu-externs.js')" Text="The Emdawn Closure externs file is missing. Restore the pinned Emdawn package before publishing." />
+    <PropertyGroup Condition="Exists('$(TwoDogWebNativeDir)shell/godot.js')">
+      <_HeightFallShellHasWebGpu>$([System.IO.File]::ReadAllText('$(TwoDogWebNativeDir)shell/godot.js').Contains('preinitializedWebGPUDevice'))</_HeightFallShellHasWebGpu>
+    </PropertyGroup>
+    <Error Condition="'$(_HeightFallShellHasWebGpu)' != 'True'" Text="The local Godot shell does not contain the WebGPU device handoff. Rebuild the patched WebGPU engine instead of using a Compatibility payload." />
+  </Target>
+</Project>

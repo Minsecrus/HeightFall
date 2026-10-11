@@ -1,0 +1,66 @@
+--- a/thirdparty/tint/src/tint/utils/strconv/parse_num.cc
++++ b/thirdparty/tint/src/tint/utils/strconv/parse_num.cc
+@@ -29,6 +29,13 @@
+ 
+ #include <charconv>
+ 
++#if defined(__EMSCRIPTEN__) && defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 180000
++#include <cerrno>
++#include <cmath>
++#include <cstdlib>
++#include <locale.h>
++#endif
++
+ // abseil dependency removed for Godot vendoring — std::from_chars
+ // handles float/double in C++17 (GCC 11+, Clang 12+, MSVC 19.29+).
+ 
+@@ -43,6 +50,41 @@
+ Result<T, ParseNumberError> Parse(std::string_view number) {
+     T val = 0;
+     if constexpr (std::is_floating_point_v<T>) {
++#if defined(__EMSCRIPTEN__) && defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 180000
++        // .NET 10's Emscripten 3.1.56 libc++ has only integer from_chars overloads.
++        // Match the general-format grammar instead of strto*'s permissive prefixes.
++        if (number.empty() || number.front() == '+' || number.front() == ' ' ||
++            (number.front() >= '\t' && number.front() <= '\r')) {
++            return ParseNumberError::kUnparsable;
++        }
++        const size_t start = number.front() == '-' ? 1 : 0;
++        if (number.size() >= start + 2 && number[start] == '0' &&
++            (number[start + 1] == 'x' || number[start + 1] == 'X')) {
++            return ParseNumberError::kUnparsable;
++        }
++
++        // A terminated copy also lets the end check reject embedded NUL bytes.
++        const std::string terminated(number);
++        static const locale_t c_locale = newlocale(LC_ALL_MASK, "C", nullptr);
++        if (!c_locale) {
++            return ParseNumberError::kUnparsable;
++        }
++        char* end = nullptr;
++        errno = 0;
++        if constexpr (std::is_same_v<T, float>) {
++            val = strtof_l(terminated.c_str(), &end, c_locale);
++        } else {
++            val = strtod_l(terminated.c_str(), &end, c_locale);
++        }
++        // musl reports ERANGE for rounded subnormals too. Keep finite nonzero
++        // results; reject overflow and underflow that cannot represent the input.
++        if (errno == ERANGE && (val == 0 || std::isinf(val))) {
++            return ParseNumberError::kResultOutOfRange;
++        }
++        if (end != terminated.data() + terminated.size()) {
++            return ParseNumberError::kUnparsable;
++        }
++#else
+         auto result = std::from_chars(number.data(), number.data() + number.size(), val);
+         if (result.ec == std::errc::result_out_of_range) {
+             return ParseNumberError::kResultOutOfRange;
+@@ -50,6 +92,7 @@
+         if (result.ec != std::errc() || result.ptr != number.data() + number.size()) {
+             return ParseNumberError::kUnparsable;
+         }
++#endif
+     } else {
+         auto result = std::from_chars(number.data(), number.data() + number.size(), val);
+         if (result.ec == std::errc::result_out_of_range) {

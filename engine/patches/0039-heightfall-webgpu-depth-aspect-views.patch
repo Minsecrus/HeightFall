@@ -1,0 +1,180 @@
+diff --git a/drivers/webgpu/rendering_device_driver_webgpu.cpp b/drivers/webgpu/rendering_device_driver_webgpu.cpp
+index c1657b4..fa065ac 100644
+--- a/drivers/webgpu/rendering_device_driver_webgpu.cpp
++++ b/drivers/webgpu/rendering_device_driver_webgpu.cpp
+@@ -381,6 +381,35 @@ static bool _is_depth_format(WGPUTextureFormat p_format) {
+ 	}
+ }
+ 
++// Keep attachment views intact: sampled depth/stencil views must expose only
++// depth, with the aspect-specific format selected by WebGPU. Uniform sets own
++// these views, including views of shared textures and absolute mip/layer slices.
++// https://gpuweb.github.io/gpuweb/#dom-gputexture-createview
++static WGPUTextureView _get_sampled_texture_view(WGTexture *p_texture, WGUniformSet *p_uniform_set, WGPUTextureViewDimension p_dimension = WGPUTextureViewDimension_Undefined) {
++	ERR_FAIL_NULL_V(p_texture, nullptr);
++	ERR_FAIL_NULL_V(p_uniform_set, nullptr);
++	const bool is_depth = _is_depth_format(p_texture->format);
++	const WGPUTextureViewDimension dimension = p_dimension == WGPUTextureViewDimension_Undefined ? p_texture->view_dimension : p_dimension;
++	if (!is_depth && dimension == p_texture->view_dimension) {
++		return p_texture->default_view;
++	}
++	WGPUTexture texture = p_texture->gpu_handle();
++	ERR_FAIL_NULL_V(texture, nullptr);
++	WGPUTextureViewDescriptor vd = {};
++	// Explicit combined depth/stencil formats are invalid with DepthOnly.
++	vd.format = is_depth ? WGPUTextureFormat_Undefined : p_texture->format;
++	vd.dimension = dimension;
++	vd.baseMipLevel = p_texture->base_mipmap;
++	vd.mipLevelCount = p_texture->mipmaps;
++	vd.baseArrayLayer = p_texture->base_layer;
++	vd.arrayLayerCount = dimension == WGPUTextureViewDimension_2D ? 1 : p_texture->layers;
++	vd.aspect = is_depth ? WGPUTextureAspect_DepthOnly : WGPUTextureAspect_All;
++	WGPUTextureView view = wgpuTextureCreateView(texture, &vd);
++	ERR_FAIL_NULL_V_MSG(view, nullptr, "WebGPU: failed to create sampled texture view.");
++	p_uniform_set->temp_views.push_back(view);
++	return view;
++}
++
+ // Returns true for 32-bit float formats that require the float32-filterable
+ // feature for linear sampling (R32Float, RG32Float, RGBA32Float).
+ static bool _is_float32_format(WGPUTextureFormat p_format) {
+@@ -5317,38 +5346,11 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
+ 							} else {
+ 								entry.textureView = fallback_float_texture_view;
+ 							}
+-						} else if (expected_dim != WGPUTextureViewDimension_Undefined &&
+-								expected_dim != tex->view_dimension) {
+-							// Fix dimension mismatch: if the layout expects a different dimension
+-							// than the texture's default view (e.g., 2D vs Cube), create a
+-							// compatible view or use a fallback texture.
+-							if (expected_dim == WGPUTextureViewDimension_Cube && tex->layers < 6 &&
+-									fallback_cube_texture_view != nullptr) {
+-								// Can't create a cube view from a texture with < 6 layers.
+-								entry.textureView = fallback_cube_texture_view;
+-							} else if (tex->view_source != nullptr) {
+-								// Use slice base offsets so slice views don't
+-								// silently remap to mip 0 / layer 0 of the parent.
+-								WGPUTextureViewDescriptor vd = {};
+-								vd.format = tex->format;
+-								vd.dimension = expected_dim;
+-								vd.baseMipLevel = tex->base_mipmap;
+-								vd.mipLevelCount = tex->mipmaps;
+-								vd.baseArrayLayer = tex->base_layer;
+-								vd.arrayLayerCount = (expected_dim == WGPUTextureViewDimension_2D) ? 1 : tex->layers;
+-								vd.aspect = WGPUTextureAspect_All;
+-								WGPUTextureView fixed_view = wgpuTextureCreateView(tex->view_source, &vd);
+-								if (fixed_view) {
+-									entry.textureView = fixed_view;
+-									us->temp_views.push_back(fixed_view);
+-								} else {
+-									entry.textureView = tex->default_view;
+-								}
+-							} else {
+-								entry.textureView = tex->default_view;
+-							}
++						} else if (expected_dim == WGPUTextureViewDimension_Cube && tex->layers < 6 &&
++								fallback_cube_texture_view != nullptr) {
++							entry.textureView = fallback_cube_texture_view;
+ 						} else {
+-							entry.textureView = tex->default_view;
++							entry.textureView = _get_sampled_texture_view(tex, us, expected_dim);
+ 						}
+ 						us->bound_textures[entry.binding] = tex;
+ 						entries.push_back(entry);
+@@ -5416,35 +5418,11 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
+ 							} else {
+ 								te.textureView = fallback_float_texture_view;
+ 							}
+-						} else if (swt_expected_dim != WGPUTextureViewDimension_Undefined &&
+-								swt_expected_dim != tex->view_dimension) {
+-							// Fix dimension mismatch (e.g., Cube↔2D with fallback textures).
+-							if (swt_expected_dim == WGPUTextureViewDimension_Cube && tex->layers < 6 &&
+-									fallback_cube_texture_view != nullptr) {
+-								te.textureView = fallback_cube_texture_view;
+-							} else if (tex->view_source != nullptr) {
+-								// Use slice base offsets so slice views don't
+-								// silently remap to mip 0 / layer 0 of the parent.
+-								WGPUTextureViewDescriptor vd = {};
+-								vd.format = tex->format;
+-								vd.dimension = swt_expected_dim;
+-								vd.baseMipLevel = tex->base_mipmap;
+-								vd.mipLevelCount = tex->mipmaps;
+-								vd.baseArrayLayer = tex->base_layer;
+-								vd.arrayLayerCount = (swt_expected_dim == WGPUTextureViewDimension_2D) ? 1 : tex->layers;
+-								vd.aspect = WGPUTextureAspect_All;
+-								WGPUTextureView fixed_view = wgpuTextureCreateView(tex->view_source, &vd);
+-								if (fixed_view) {
+-									te.textureView = fixed_view;
+-									us->temp_views.push_back(fixed_view);
+-								} else {
+-									te.textureView = tex->default_view;
+-								}
+-							} else {
+-								te.textureView = tex->default_view;
+-							}
++						} else if (swt_expected_dim == WGPUTextureViewDimension_Cube && tex->layers < 6 &&
++								fallback_cube_texture_view != nullptr) {
++							te.textureView = fallback_cube_texture_view;
+ 						} else {
+-							te.textureView = tex->default_view;
++							te.textureView = _get_sampled_texture_view(tex, us, swt_expected_dim);
+ 						}
+ 						us->bound_textures[te.binding] = tex;
+ 						entries.push_back(te);
+@@ -5461,6 +5439,17 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
+ 						WGPUBindGroupEntry entry = {};
+ 						entry.binding = uniform.binding * 2;
+ 						entry.textureView = tex->default_view;
++						// Read-only storage images can be lowered to sampled textures.
++						// Apply sampling aspect rules only to those actual BGL entries.
++						if (p_set_index < (uint32_t)shader->bind_group_infos.size()) {
++							for (const auto &bge : shader->bind_group_infos[p_set_index].entries) {
++								if (bge.layout_entry.binding == entry.binding &&
++										bge.layout_entry.texture.sampleType != WGPUTextureSampleType_BindingNotUsed) {
++									entry.textureView = _get_sampled_texture_view(tex, us, bge.layout_entry.texture.viewDimension);
++									break;
++								}
++							}
++						}
+ 						us->bound_textures[entry.binding] = tex;
+ 						entries.push_back(entry);
+ 					}
+@@ -5685,7 +5674,7 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
+ 
+ 	WGPUBindGroup bg = wgpuDeviceCreateBindGroup(device, &bg_desc);
+ 	if (bg == nullptr) {
+-		delete us;
++		uniform_set_free(UniformSetID(us));
+ 		ERR_FAIL_V_MSG(UniformSetID(), "WebGPU: wgpuDeviceCreateBindGroup failed.");
+ 	}
+ 
+@@ -5845,21 +5834,14 @@ WGPUBindGroup RenderingDeviceDriverWebGPU::_get_compatible_bind_group(WGUniformS
+ 				if (target_dim != WGPUTextureViewDimension_Undefined &&
+ 						p_us->bound_textures.has(entry.binding)) {
+ 					WGTexture *tex = p_us->bound_textures[entry.binding];
+-					if (tex && tex->view_dimension != target_dim && tex->view_source) {
+-						// Use slice base offsets so slice views don't
+-						// silently remap to mip 0 / layer 0 of the parent.
+-						WGPUTextureViewDescriptor vd = {};
+-						vd.format = tex->format;
+-						vd.dimension = target_dim;
+-						vd.baseMipLevel = tex->base_mipmap;
+-						vd.mipLevelCount = tex->mipmaps;
+-						vd.baseArrayLayer = tex->base_layer;
+-						vd.arrayLayerCount = (target_dim == WGPUTextureViewDimension_2D) ? 1 : tex->layers;
+-						vd.aspect = WGPUTextureAspect_All;
+-						WGPUTextureView fixed = wgpuTextureCreateView(tex->view_source, &vd);
+-						if (fixed) {
+-							entry.textureView = fixed;
+-							p_us->temp_views.push_back(fixed);
++					if (tex && tex->view_source) {
++						const bool is_depth = _is_depth_format(tex->format);
++						const bool accepts_depth = target_tex_sample == WGPUTextureSampleType_Depth ||
++								target_tex_sample == WGPUTextureSampleType_UnfilterableFloat;
++						if ((!is_depth && tex->view_dimension != target_dim) || (is_depth && accepts_depth)) {
++							// Rebinding can change both dimension and sample type. Restore
++							// the actual depth aspect even if the source used a fallback.
++							entry.textureView = _get_sampled_texture_view(tex, p_us, target_dim);
+ 						}
+ 					}
+ 				}

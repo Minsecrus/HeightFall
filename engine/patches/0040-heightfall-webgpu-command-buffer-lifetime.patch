@@ -1,0 +1,130 @@
+--- a/drivers/webgpu/rendering_device_driver_webgpu.cpp
++++ b/drivers/webgpu/rendering_device_driver_webgpu.cpp
+@@ -3057,7 +3057,8 @@
+ 		}
+ 	}
+ 
+-	// Clear finished command buffers (they are consumed by submit).
++	// Submission retains the commands it needs, but does not consume our API
++	// handles. Release them so Emdawn can drop the JS GPUCommandBuffer references.
+ 	for (uint32_t i = 0; i < p_cmd_buffers.size(); i++) {
+ 		WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffers[i].id);
+ 		if (cmd) {
+@@ -3081,7 +3082,10 @@
+ 				}
+ 			}
+ 			cmd->written_query_pools.clear();
+-			cmd->finished_buffer = nullptr;
++			if (cmd->finished_buffer) {
++				wgpuCommandBufferRelease(cmd->finished_buffer);
++				cmd->finished_buffer = nullptr;
++			}
+ 		}
+ 	}
+ 
+@@ -3100,17 +3104,30 @@
+ }
+ 
+ bool RenderingDeviceDriverWebGPU::command_pool_reset(CommandPoolID p_cmd_pool) {
+-	// Nothing to reset — each command buffer creates its own encoder.
++	WGCommandPool *pool = (WGCommandPool *)(p_cmd_pool.id);
++	ERR_FAIL_NULL_V(pool, false);
++	for (WGCommandBuffer *cmd : pool->command_buffers) {
++		cmd->reset();
++	}
+ 	return true;
+ }
+ 
+ void RenderingDeviceDriverWebGPU::command_pool_free(CommandPoolID p_cmd_pool) {
+ 	WGCommandPool *pool = (WGCommandPool *)(p_cmd_pool.id);
++	if (!pool) {
++		return;
++	}
++	for (WGCommandBuffer *cmd : pool->command_buffers) {
++		delete cmd;
++	}
+ 	delete pool;
+ }
+ 
+ RDD::CommandBufferID RenderingDeviceDriverWebGPU::command_buffer_create(CommandPoolID p_cmd_pool) {
++	WGCommandPool *pool = (WGCommandPool *)(p_cmd_pool.id);
++	ERR_FAIL_NULL_V(pool, CommandBufferID());
+ 	WGCommandBuffer *cmd = new WGCommandBuffer();
++	pool->command_buffers.push_back(cmd);
+ 	return CommandBufferID(cmd);
+ }
+ 
+@@ -3118,6 +3135,8 @@
+ 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
+ 	ERR_FAIL_NULL_V(cmd, false);
+ 
++	// A recording may have been abandoned without submission or pool reset.
++	cmd->reset();
+ 	WGPUCommandEncoderDescriptor desc = {};
+ 	cmd->encoder = wgpuDeviceCreateCommandEncoder(device, &desc);
+ 	ERR_FAIL_COND_V(cmd->encoder == nullptr, false);
+@@ -3137,6 +3156,9 @@
+ void RenderingDeviceDriverWebGPU::command_buffer_end(CommandBufferID p_cmd_buffer) {
+ 	WGCommandBuffer *cmd = (WGCommandBuffer *)(p_cmd_buffer.id);
+ 	ERR_FAIL_NULL(cmd);
++	if (!cmd->encoder) {
++		return;
++	}
+ 
+ 	// End any active render/compute pass.
+ 	cmd->end_active_encoder();
+@@ -3185,6 +3207,9 @@
+ 
+ 	// Finish the command encoder.
+ 	if (cmd->encoder) {
++		if (cmd->finished_buffer) {
++			wgpuCommandBufferRelease(cmd->finished_buffer);
++		}
+ 		cmd->finished_buffer = wgpuCommandEncoderFinish(cmd->encoder, nullptr);
+ 		wgpuCommandEncoderRelease(cmd->encoder);
+ 		cmd->encoder = nullptr;
+--- a/drivers/webgpu/webgpu_objects.h
++++ b/drivers/webgpu/webgpu_objects.h
+@@ -326,8 +326,11 @@
+ 	WGPUQueue queue = nullptr;
+ };
+ 
++struct WGCommandBuffer;
++
+ struct WGCommandPool {
+ 	RDD::CommandBufferType buffer_type = RDD::COMMAND_BUFFER_TYPE_PRIMARY;
++	LocalVector<WGCommandBuffer *> command_buffers;
+ };
+ 
+ struct WGQueryPool; // Forward declaration for WGCommandBuffer.
+@@ -444,6 +447,30 @@
+ 		}
+ 		active_encoder = NONE;
+ 	}
++
++	void reset() {
++		end_active_encoder();
++		if (encoder) {
++			wgpuCommandEncoderRelease(encoder);
++			encoder = nullptr;
++		}
++		if (finished_buffer) {
++			wgpuCommandBufferRelease(finished_buffer);
++			finished_buffer = nullptr;
++		}
++		written_query_pools.clear();
++		render_state = {};
++		invalidate_bind_groups();
++		for (uint32_t i = 0; i < MAX_BIND_GROUPS; i++) {
++			last_bound_state[i] = {};
++		}
++		push_constants_dirty = false;
++		push_constant_data_len = 0;
++	}
++
++	~WGCommandBuffer() {
++		reset();
++	}
+ };
+ 
+ // =============================================================================

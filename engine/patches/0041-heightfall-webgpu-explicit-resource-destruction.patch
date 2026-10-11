@@ -1,0 +1,201 @@
+--- a/drivers/webgpu/rendering_device_driver_webgpu.cpp
++++ b/drivers/webgpu/rendering_device_driver_webgpu.cpp
+@@ -60,6 +60,26 @@
+ #define WEBGPU_DIAG_INT(...) 0
+ #endif
+ 
++// Emdawn Release drops an API handle, leaving its JS object to garbage collection.
++// JS GC does not account for allocations in the GPU process. Explicitly destroy
++// resources when Godot retires them so their storage can be reclaimed once all
++// previously submitted operations finish, without waiting for a JS collection.
++// Only use these helpers for owned resources; views and surface textures borrow
++// their backing allocation and must keep their ordinary Release semantics.
++static void _destroy_and_release_buffer(WGPUBuffer p_buffer) {
++	if (p_buffer) {
++		wgpuBufferDestroy(p_buffer);
++		wgpuBufferRelease(p_buffer);
++	}
++}
++
++static void _destroy_and_release_texture(WGPUTexture p_texture) {
++	if (p_texture) {
++		wgpuTextureDestroy(p_texture);
++		wgpuTextureRelease(p_texture);
++	}
++}
++
+ // Forward declaration for timestamp readback callback (defined below command_timestamp_query_pool_reset).
+ static void _timestamp_readback_callback(WGPUMapAsyncStatus p_status, WGPUStringView p_message, void *p_userdata1, void *p_userdata2);
+ 
+@@ -463,7 +483,7 @@
+ 		push_constant_bind_group_layout = nullptr;
+ 	}
+ 	if (push_constant_ring_buffer) {
+-		wgpuBufferRelease(push_constant_ring_buffer);
++		_destroy_and_release_buffer(push_constant_ring_buffer);
+ 		push_constant_ring_buffer = nullptr;
+ 	}
+ 	if (empty_bind_group) {
+@@ -481,7 +501,7 @@
+ 		fallback_float_texture_view = nullptr;
+ 	}
+ 	if (fallback_float_texture) {
+-		wgpuTextureRelease(fallback_float_texture);
++		_destroy_and_release_texture(fallback_float_texture);
+ 		fallback_float_texture = nullptr;
+ 	}
+ 	if (fallback_cube_texture_view) {
+@@ -489,7 +509,7 @@
+ 		fallback_cube_texture_view = nullptr;
+ 	}
+ 	if (fallback_cube_texture) {
+-		wgpuTextureRelease(fallback_cube_texture);
++		_destroy_and_release_texture(fallback_cube_texture);
+ 		fallback_cube_texture = nullptr;
+ 	}
+ 	if (fallback_ms_texture_view) {
+@@ -497,7 +517,7 @@
+ 		fallback_ms_texture_view = nullptr;
+ 	}
+ 	if (fallback_ms_texture) {
+-		wgpuTextureRelease(fallback_ms_texture);
++		_destroy_and_release_texture(fallback_ms_texture);
+ 		fallback_ms_texture = nullptr;
+ 	}
+ 
+@@ -517,7 +537,7 @@
+ 
+ 	// Release aliasing stub buffer.
+ 	if (aliasing_stub_buffer) {
+-		wgpuBufferRelease(aliasing_stub_buffer);
++		_destroy_and_release_buffer(aliasing_stub_buffer);
+ 		aliasing_stub_buffer = nullptr;
+ 	}
+ 
+@@ -525,7 +545,7 @@
+ 	for (KeyValue<uint64_t, ReadbackEntry *> &kv : _readback_cache) {
+ 		ReadbackEntry *entry = kv.value;
+ 		if (entry->staging) {
+-			wgpuBufferRelease(entry->staging);
++			_destroy_and_release_buffer(entry->staging);
+ 		}
+ 		if (entry->shadow) {
+ 			memfree(entry->shadow);
+@@ -1099,7 +1119,7 @@
+ 			entry->cancelled = true;
+ 		} else {
+ 			if (entry->staging) {
+-				wgpuBufferRelease(entry->staging);
++				_destroy_and_release_buffer(entry->staging);
+ 			}
+ 			if (entry->shadow) {
+ 				memfree(entry->shadow);
+@@ -1117,7 +1137,7 @@
+ 	}
+ 
+ 	if (buf->handle) {
+-		wgpuBufferRelease(buf->handle);
++		_destroy_and_release_buffer(buf->handle);
+ 	}
+ 	if (buf->shadow_map) {
+ 		memfree(buf->shadow_map);
+@@ -1145,7 +1165,7 @@
+ 			if (p_status == WGPUMapAsyncStatus_Success) {
+ 				wgpuBufferUnmap(buf->handle);
+ 			}
+-			wgpuBufferRelease(buf->handle);
++			_destroy_and_release_buffer(buf->handle);
+ 		}
+ 		if (buf->shadow_map) {
+ 			memfree(buf->shadow_map);
+@@ -1543,7 +1563,7 @@
+ 			if (p_status == WGPUMapAsyncStatus_Success) {
+ 				wgpuBufferUnmap(entry->staging);
+ 			}
+-			wgpuBufferRelease(entry->staging);
++			_destroy_and_release_buffer(entry->staging);
+ 		}
+ 		if (entry->shadow) {
+ 			memfree(entry->shadow);
+@@ -1824,7 +1844,7 @@
+ 
+ 	tex->default_view = wgpuTextureCreateView(tex->handle, &view_desc);
+ 	if (tex->default_view == nullptr) {
+-		wgpuTextureRelease(tex->handle);
++		_destroy_and_release_texture(tex->handle);
+ 		delete tex;
+ 		ERR_FAIL_V_MSG(TextureID(), "WebGPU: wgpuTextureCreateView failed for default view.");
+ 	}
+@@ -2023,7 +2043,7 @@
+ 					entry->cancelled = true;
+ 				} else {
+ 					if (entry->staging) {
+-						wgpuBufferRelease(entry->staging);
++						_destroy_and_release_buffer(entry->staging);
+ 					}
+ 					if (entry->shadow) {
+ 						memfree(entry->shadow);
+@@ -2048,7 +2068,7 @@
+ 		wgpuTextureViewRelease(tex->default_view);
+ 	}
+ 	if (tex->handle && !tex->is_from_swap_chain) {
+-		wgpuTextureRelease(tex->handle);
++		_destroy_and_release_texture(tex->handle);
+ 	}
+ 	delete tex;
+ }
+@@ -5667,7 +5687,7 @@
+ 			rw_shadow_copy_map[orig_tex->gpu_handle()].push_back(shadow_tex);
+ 			us->rw_shadow_registrations.push_back({ orig_tex->gpu_handle(), shadow_tex });
+ 		} else {
+-			wgpuTextureRelease(shadow_tex);
++			_destroy_and_release_texture(shadow_tex);
+ 		}
+ 	}
+ 
+@@ -5949,7 +5969,7 @@
+ 	}
+ 	for (WGPUTexture t : us->rw_shadow_textures) {
+ 		if (t) {
+-			wgpuTextureRelease(t);
++			_destroy_and_release_texture(t);
+ 		}
+ 	}
+ 	// Deregister shadow copy targets from the driver-level map.
+@@ -9060,8 +9080,8 @@
+ 	if (!pool->resolve_buffer || !pool->readback_buffer) {
+ 		WARN_PRINT("WebGPU: Failed to create timestamp resolve/readback buffers.");
+ 		if (pool->handle) { wgpuQuerySetRelease(pool->handle); pool->handle = nullptr; }
+-		if (pool->resolve_buffer) { wgpuBufferRelease(pool->resolve_buffer); pool->resolve_buffer = nullptr; }
+-		if (pool->readback_buffer) { wgpuBufferRelease(pool->readback_buffer); pool->readback_buffer = nullptr; }
++		if (pool->resolve_buffer) { _destroy_and_release_buffer(pool->resolve_buffer); pool->resolve_buffer = nullptr; }
++		if (pool->readback_buffer) { _destroy_and_release_buffer(pool->readback_buffer); pool->readback_buffer = nullptr; }
+ 		pool->is_real = false;
+ 		return QueryPoolID(pool);
+ 	}
+@@ -9087,10 +9107,10 @@
+ 		wgpuQuerySetRelease(pool->handle);
+ 	}
+ 	if (pool->resolve_buffer) {
+-		wgpuBufferRelease(pool->resolve_buffer);
++		_destroy_and_release_buffer(pool->resolve_buffer);
+ 	}
+ 	if (pool->readback_buffer) {
+-		wgpuBufferRelease(pool->readback_buffer);
++		_destroy_and_release_buffer(pool->readback_buffer);
+ 	}
+ 	if (pool->cpu_results) {
+ 		memfree(pool->cpu_results);
+@@ -9134,10 +9154,10 @@
+ 			if (p_status == WGPUMapAsyncStatus_Success) {
+ 				wgpuBufferUnmap(pool->readback_buffer);
+ 			}
+-			wgpuBufferRelease(pool->readback_buffer);
++			_destroy_and_release_buffer(pool->readback_buffer);
+ 		}
+ 		if (pool->resolve_buffer) {
+-			wgpuBufferRelease(pool->resolve_buffer);
++			_destroy_and_release_buffer(pool->resolve_buffer);
+ 		}
+ 		if (pool->handle) {
+ 			wgpuQuerySetRelease(pool->handle);

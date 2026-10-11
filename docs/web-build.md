@@ -1,0 +1,150 @@
+# Godot WebGPU 网页构建
+
+网页宿主直接加载 `game/project.godot` 的原始场景，并运行原 C# 脚本、Godot HUD、输入和 Effects。网页的渲染调用由自编 Godot 的 WebGPU 后端执行；游戏 UI 和特效代码继续与桌面共用。桌面游戏和纯逻辑类库 `HeightFall.Sim` 保持 `net8.0`；网页宿主使用 `net10.0`，游戏项目仅在 `HeightFallWebGpu=true` 时切换为 `net10.0` 和网页绑定。
+
+这是实验性的第三方引擎整合，不是官方 Godot 导出模板。启动页指定 `--rendering-driver webgpu --rendering-method forward_plus`，原生库使用 `webgpu=yes opengl3=no` 构建。WebGPU、Forward+ 和实际游戏效果必须在浏览器中验证；复用相同场景和脚本不代表所有显卡、浏览器都能得到逐像素相同的画面。
+
+## 工具和源码
+
+需要 Git、PowerShell 7、[uv](https://docs.astral.sh/uv/getting-started/installation/) 和 [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)。为所使用的 SDK 安装 WebAssembly 工具链：
+
+```powershell
+dotnet workload install wasm-tools
+```
+
+`uv` 使用 `engine/pyproject.toml` 和 `engine/uv.lock` 准备本地 Python / SCons 环境。编译器、Node 和 Emscripten sysroot 使用 .NET `wasm-tools` 的匹配组件；网页引擎和最终 .NET 宿主都使用 **Emscripten 3.1.56**。首次构建需要下载依赖并编译 Godot C++ 源码，应预留内存、磁盘空间和编译时间。
+
+源码锁定在 [engine/engine-lock.json](../engine/engine-lock.json)：
+
+- Godot **4.7.2** 的 2dog fork：`thygrrr/godot`，提交 `5fa0f824bf9223ab240658b85c061c171b5de677`。
+- Studio Foundation WebGPU 引擎整合：提交 `ef064f08102bee78e7b27603b6ce40e92f3645ad` 的 **33 个补丁**，继承 `dwalter/godotwebgpu` 的后端；每个下载补丁都校验 SHA-256，再应用本仓库的适配补丁。
+- Emdawn WebGPU：固定 `v20250531.224602`，由 `engine/toolchain/prepare-emdawn.ps1` 校验源码包并用同一 Emscripten 3.1.56 直接编译 C++ 接口及链接 JS 桥。
+
+本仓库在这 33 个补丁之后应用八个本地适配：
+
+- `0034-heightfall-runtime-wgsl-build.patch`：所有构建宿主默认生成空的 WGSL 预编译查找表，着色器在运行时通过引擎链接的 Tint 转换。只有显式设置 `GODOT_WEBGPU_PRECOMPILE=1` 才额外构建宿主侧 `tint_convert_cli`，执行 GLSL → SPIR-V → WGSL 预编译；该可选路径需要另行验证。
+- `0035-heightfall-libgodot-webgpu-platform.patch`：保留 2dog 的库 / Mono 平台支持并加入 WebGPU，启用 `WEBGPU_ENABLED` / `RD_ENABLED`，使用固定 Emdawn 包的 C 与 C++ 头文件。宿主直接链接对应对象和 JS 桥，保持 .NET Emscripten 3.1.56 ABI 及只读 SDK 缓存。
+- `0036-heightfall-emscripten-float-parsing.patch`：适配 Emscripten 3.1.56 旧 libc++ 缺少浮点 `std::from_chars` 重载的问题。Tint 的 float / double 解析在该工具链下改用固定 C locale 的转换，保留输入格式、完整消费及溢出 / 下溢检查；其他工具链继续使用 `std::from_chars`。
+- `0037-heightfall-webgpu-msaa-bindings-and-resolve.patch`：让 MSAA 纹理绑定与 WGSL 的无 sampler 读取一致，保留准确的绑定布局，并通过不绘制图元的 render pass 执行颜色 resolve。
+- `0038-heightfall-webgpu-depth-float-bindings.patch`：在 `UnfilterableFloat` 绑定中保留真实的多重采样深度纹理，包括 `Depth32Float`，避免将其替换成占位纹理；格式能力依据 [WebGPU 规范](https://www.w3.org/TR/webgpu/#texture-format-caps)。
+- `0039-heightfall-webgpu-depth-aspect-views.patch`：为深度纹理采样创建 `DepthOnly` 视图，避免深度 / 模板纹理的 `All` 视图在 MSAA resolve 的浮点采样绑定中被拒绝；附件视图继续保留所需的深度 / 模板 aspect。
+- `0040-heightfall-webgpu-command-buffer-lifetime.patch`：提交后释放命令缓冲区的 API 引用，并在重置、重新录制和销毁命令池时清理持有的对象，避免 Emdawn 的 JS 命令缓冲区引用逐帧累积。
+- `0041-heightfall-webgpu-explicit-resource-destruction.patch`：对引擎拥有的 buffer / texture 显式调用 `Destroy`，再释放 API 引用，修正仅 `Release` 时底层资源生命周期没有及时结束的问题；借用的资源和 `mapAsync` 路径保持原逻辑。
+
+引擎源码、原生输出和工具链准备文件存放在 `.engine-cache/`。准备脚本拒绝向该目录外写引擎源码；缓存记录包含锁文件和本地补丁的 SHA-256 源码签名，以及补丁所修改的受控源码文件指纹。每次重用都会核对锁定的 Git 提交、源码签名和这些文件的内容。
+
+锁文件或本地补丁变化时，必须准备新的 `.engine-cache` checkout。脚本会拒绝默默沿用旧源码；受控文件与已记录指纹不一致时也会报错，应先检查差异并重新准备匹配的源码。
+
+开源组件归属见 [engine/NOTICE.md](../engine/NOTICE.md)。使用范围是所列引擎补丁及其依赖；各项目工具和其他内容适用它们各自的许可证。
+
+## 编译原生 WebGPU 引擎
+
+在仓库根目录运行：
+
+```powershell
+.\tools\build-godot-webgpu.ps1
+```
+
+默认使用 4 个并行编译任务。可按本机资源调整，例如：
+
+```powershell
+.\tools\build-godot-webgpu.ps1 -Jobs 4 -VerifyToolchain
+```
+
+`-VerifyToolchain` 额外检查 Emdawn C++ 编译、JS 最终链接和 Node 中的实例生命周期；它不验证浏览器 GPU 或游戏画面。脚本随后仍会编译完整原生引擎。
+
+主原生构建脚本默认运行 Tint 数字兼容回归：`engine/toolchain/verify-tint-floats.ps1` 使用同一 Emscripten 编译实际 vendored Tint 解析器，运行 `engine/tests/tint-float-parse.cc` 中的 **129 项边界检查**，覆盖负零、浮点范围、次正规数、错误格式、特殊值和整数边界。回归失败会中止原生构建；这项检查不依赖 `-VerifyToolchain` 开关。
+
+已准备好引擎源码时，可在同一个 PowerShell 会话中单独运行：
+
+```powershell
+& .\engine\toolchain\prepare-emdawn.ps1
+& .\engine\toolchain\verify-tint-floats.ps1
+```
+
+回归输出位于 `.engine-cache/tint-float-test/`，不修改安装的 .NET SDK 缓存。
+
+成功后，原生 payload 位于：
+
+```text
+.engine-cache/2dog/godot/bin/web/template_release/
+  libgodot/libgodot.a
+  libgodot/config.json
+  libgodot/js_library/...
+  shell/godot.js
+```
+
+`libgodot.a` 将静态链接进 .NET 的 WebAssembly 运行时。它必须与网页宿主使用的工具链一致。原版 2dog 的预编译浏览器包没有这个自定义 WebGPU 后端，不能作为该原生输出的替代品。
+
+## 发布原游戏宿主
+
+新的宿主项目是 `game/HeightFall.WebGpu/HeightFall.WebGpu.csproj`。从仓库根目录完成引擎编译及宿主发布的统一入口为：
+
+```powershell
+.\tools\build-webgpu.ps1 -Jobs 4
+```
+
+默认使用 `Release`。已完成上节的原生编译时，可直接发布宿主：
+
+```powershell
+.\tools\build-webgpu.ps1 -SkipEngineBuild
+```
+
+需要迭代调试网页渲染时，可使用：
+
+```powershell
+.\tools\build-webgpu.ps1 -SkipEngineBuild -Configuration Debug
+```
+
+Debug 宿主设置 `EmccLinkOptimizationFlag=-O0`，用于减少本地迭代中的链接优化工作；自编原生引擎仍使用 `template_release`。Release 保持 SDK 的链接优化，设置 `WasmNativeDebugSymbols=false`，不生成原生调试符号。发布脚本在未预设 `BINARYEN_CORES` 时使用 `min(Jobs, 2)`，限制 WebAssembly 优化阶段的并行任务；已有值会保留，脚本结束时恢复调用前的环境变量。这些选项不免除大型原生链接与优化所需的内存。
+
+宿主的对应直接发布命令是：
+
+```powershell
+dotnet publish game/HeightFall.WebGpu/HeightFall.WebGpu.csproj -c Release -p:HeightFallWebGpu=true
+```
+
+`HeightFallWebGpu=true` 必须作为全局 MSBuild 属性传入，让 restore 和 build 都选择网页绑定。桌面继续使用官方 Godot 绑定，网页使用匹配版本的 2dog 绑定；网页游戏程序集输出隔离在 `game/.godot/mono/webgpu/`，桌面输出保持原路径。
+
+`game/HeightFall.csproj` 先声明无条件 `net10.0`，再通过 `HeightFallWebGpu != true` 的条件属性选择桌面 `net8.0`。这是为了让 2dog 导入 / 导出编辑器的 XML 最低框架检查不会把桌面配置自动改写为 .NET 10；真正使用的框架以 MSBuild 求值为准。已确认默认求值为 `net8.0`，传入 `HeightFallWebGpu=true` 时为 `net10.0`。
+
+完整静态产物位于 `game/HeightFall.WebGpu/AppBundle/`。发布脚本还会添加 `.nojekyll`、第三方署名，以及 Godot、2dog、Tint、SPIRV-Tools、SPIRV-Headers、Emdawn、WebGPU native 和 .NET WebAssembly 运行时的许可证 / 第三方声明文件；它不会启动浏览器或部署网站。
+
+发布时必须包含 Godot 资源包、引擎脚本、WebAssembly、`_framework/` 及许可证文件，并保留所有相对路径。宿主会校验本地 `libgodot.a`、包含 WebGPU 设备交接逻辑的 Godot shell，以及 Emdawn 对象和 JS 桥；缺失时构建应报错。
+
+## 本机打开
+
+网页需要 HTTP 服务加载 WebAssembly 和 Godot 资源，不能双击 `index.html`。将静态产物准备到 `game/HeightFall.WebGpu/AppBundle/` 后，在仓库根目录运行：
+
+```powershell
+dotnet dnx dotnet-serve -d game/HeightFall.WebGpu/AppBundle -a 127.0.0.1 -p 8000
+```
+
+随后打开 <http://127.0.0.1:8000/>；按 `Ctrl+C` 停止服务。参数见 [dotnet-serve 官方说明](https://github.com/natemcmaster/dotnet-serve#usage)。正式部署使用 HTTPS；本机 loopback 可作为安全环境，WebGPU 的浏览器支持范围见 [MDN WebGPU 文档](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API)。
+
+操作和 HUD 来自原 Godot 游戏。浏览器需要能提供 WebGPU adapter/device 及所需功能、限制；启动失败时应查看页面错误和浏览器控制台。硬件加速、浏览器版本、设备限制与着色器转换都可能影响结果。
+
+## 验证与部署状态
+
+截至 2026-10-11，已在全新 checkout 上完成锁定基底、33 个上游补丁及 8 个本地适配的准备，并通过缓存重用验证；全新源码与当前编译源码的 **1,307 个受控文件**指纹一致。WebGPU / Mono 构建配置 dry-run、固定 Emdawn 包的 C++ 对象 / JS 链接 / Node 实例生命周期、129 项 Tint 数字边界回归均已通过。
+
+桌面 `net8.0` 配置的根 `HeightFall.sln` Debug 构建已通过，结果为 0 警告、0 错误；7 项 `HeightFall.Sim` 逻辑测试全部通过。官方 Godot 4.7.2 .NET 引擎的 headless 启动检查经过 20 帧后正常退出，退出码为 0。另已使用 Vulkan 1.4.335 / Forward+ 在 Intel Arc B390 上运行原桌面游戏并保存第 20 帧截图，确认场景、泉水、SSAO / 阴影及 HUD 显示，进程正常退出。检查使用 Winget 链接解析后的实际引擎可执行文件，避免通过链接启动时找不到 .NET 程序集的问题。上述结果验证桌面启动和渲染，不验证浏览器 3D 渲染。
+
+完整 Godot WebGPU 原生库的 SCons 构建已通过；加入最新 `0041` 适配后的本次增量构建耗时 16.67 秒，退出码为 0，此时间不代表首次完整编译的耗时。包含 `0041` 的 Debug / `-O0` 和优化 Release 宿主发布均以 0 退出。最新 Release 的 `godot.wasm` 为 **51,353,858 字节**，原游戏 PCK 为 **4,428 字节**，已核对没有混入旧 `HeightFall.web` 宿主内容。
+
+Chrome 实际运行报告 **WebGPU 1.0 / Forward+**，最新 `0041` Release 已显示原 3D 场景、泉水、格子、英雄及 Godot HUD，并保存实际画面截图。`game/scripts/`、`game/scenes/`、`game/shaders/` 和 `game/project.godot` 保持原 HEAD 内容。已在这个 Godot 后端实测以下操作，期间没有收到 WebGPU `uncapturederror`：
+
+- 右键移动英雄，以及 Ctrl + 单击的 3×3 地形编辑。
+- 学习技能后按 W 并单击目标，确认地形隆起、碎石特效和 14 秒冷却显示。
+- F1 后等级变为 2；Tab 切换英雄后 HUD 显示 560 HP。
+- V 的恢复冷却显示为 60 秒；B 的回城进度显示。
+
+最新优化 Release 上再次验证了右键移动、F1 升至等级 2、学习技能及 W 点击施放，确认 14 秒冷却、地形隆起、碎石和震屏显示，并保存截图；也重新检查了 Tab 切换后的 560 HP、V 恢复的 60 秒冷却，以及 B 回城进度。本机前台运行曾观察到约 115–135 FPS；这是当前设备和场景的观察值，不是跨设备性能基准。
+
+`0041` 的短时内存检查中没有再次出现此前快速增长至约 17.9 GB 的现象。Debug 的浏览器 GPU 进程私有内存在约 6 分钟采样窗口内为 **2,439–2,841 MiB**，后段样本为 2,612、2,628、2,599 MiB；窗口包含后台遮挡 / 降帧间隔，不能表述为连续 6 分钟前台运行。Release 在约 2 分钟正常帧率的检查中，样本为 **2,375–2,475 MiB**。这些短时样本不证明长时间对局的内存稳定性，也不代表全部特效或所有设备兼容性已经通过验证。此前独立客户端的 Chrome 验证不能作为这个 Godot 后端的验证结果。
+
+长时间对局、浏览器和移动端覆盖仍需持续验证；未逐项核对的阴影、伤害数字、后处理和其他技能 / 特效也应分别检查。在其他测试设备上仍需核对实际驱动为 WebGPU、渲染方法为 Forward+。设备功能不足或渲染 API 不兼容时，需记录具体限制；不能仅因出现画面就宣称全部桌面特性已支持。
+
+部署工作流为 [.github/workflows/deploy-webgpu.yml](../.github/workflows/deploy-webgpu.yml)。它由 `main` 分支推送或手动触发，在 Ubuntu 上安装匹配的 WebAssembly 工具链、运行逻辑测试，以 4 个并行任务构建原 Godot 引擎并发布宿主，核对 AppBundle 后上传并部署 GitHub Pages。仓库 Pages 的发布来源需要配置为 GitHub Actions。
+
+部署地址配置为 [HeightFall 网页游戏](https://minsecrus.github.io/HeightFall/)，运行状态见 [GitHub Actions](https://github.com/Minsecrus/HeightFall/actions/workflows/deploy-webgpu.yml)。推送后应核对对应提交的构建和 deploy job 均成功，再检查页面是否加载该版本。本节记录的本机结果不代替 CI 和线上运行验证。

@@ -1,0 +1,32 @@
+diff --git a/platform/web/detect.py b/platform/web/detect.py
+index 88e24a24..7afb4e7d 100644
+--- a/platform/web/detect.py
++++ b/platform/web/detect.py
+@@ -91,7 +91,7 @@ def get_flags():
+         # run-time performance.
+         # Note that this overrides the "auto" behavior for target/dev_build.
+         "optimize": "size",
+-        "supported": ["library", "mono"],
++        "supported": ["library", "mono", "webgpu"],
+     }
+ 
+ 
+@@ -272,6 +272,18 @@ def configure(env: "SConsEnvironment"):
+         # See https://emscripten.org/docs/tools_reference/settings_reference.html#gl-enable-get-proc-address
+         env.Append(LINKFLAGS=["-sGL_ENABLE_GET_PROC_ADDRESS=0"])
+ 
++    if env["webgpu"]:
++        env.AppendUnique(CPPDEFINES=["WEBGPU_ENABLED", "RD_ENABLED"])
++        # Compile against the current Dawn API with the same compiler as .NET.
++        # The host links the matching Emdawn object and JS directly, preserving
++        # the runtime's 3.1.56 ABI and its read-only SDK cache.
++        emdawn_include = os.environ.get("EMDAWNWEBGPU_INCLUDE")
++        emdawn_cpp_include = os.environ.get("EMDAWNWEBGPU_CPP_INCLUDE")
++        if not emdawn_include or not emdawn_cpp_include:
++            print_error("Prepare the pinned Emdawn source and set EMDAWNWEBGPU_INCLUDE and EMDAWNWEBGPU_CPP_INCLUDE")
++            sys.exit(255)
++        env.Prepend(CCFLAGS=["-isystem", emdawn_include, "-isystem", emdawn_cpp_include])
++
+     if env["javascript_eval"]:
+         env.Append(CPPDEFINES=["JAVASCRIPT_EVAL_ENABLED"])
+ 

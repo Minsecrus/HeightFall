@@ -1,11 +1,25 @@
 <Project Sdk="Godot.NET.Sdk/4.7.2">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- The web export editor upgrades unconditional older frameworks in place.
+         Keep its baseline at net10.0 and select the desktop framework explicitly. -->
+    <TargetFramework Condition="'$(HeightFallWebGpu)' != 'true'">net8.0</TargetFramework>
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Nullable>enable</Nullable>
     <RootNamespace>HeightFall.Game</RootNamespace>
+    <DefaultItemExcludes>$(DefaultItemExcludes);HeightFall.web/**;HeightFall.WebGpu/**</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\src\HeightFall.Sim\HeightFall.Sim.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(HeightFallWebGpu)' == 'true'">
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>$(DefineConstants);TWODOG_WEB_BOOT</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(HeightFallWebGpu)' == 'true'">
+    <PackageReference Include="2dog.godotsharp" Version="$(TwoDogVersion)" />
+    <PackageReference Include="2dog.godotsharp.editor" Version="$(TwoDogVersion)" Condition="'$(Configuration)' == 'Debug' Or '$(Configuration)' == 'Editor'" />
+    <Compile Include="HeightFall.WebGpu/TwoDogWebBoot.cs" />
   </ItemGroup>
 </Project>

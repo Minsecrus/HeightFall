@@ -1,0 +1,27 @@
+--- a/drivers/webgpu/wgsl_precompile.py
++++ b/drivers/webgpu/wgsl_precompile.py
+@@ -877,17 +877,17 @@
+ def build_wgsl_precompiled(target, source, env):
+     """scons builder action for WGSL precompilation.
+ 
+-    Builds the tint_convert_cli host tool (if needed), then runs the full
+-    GLSL → SPIR-V → WGSL precompilation pipeline to generate
+-    wgsl_precompiled.gen.h.
++    By default, generates an empty lookup table and uses runtime Tint.
++    With GODOT_WEBGPU_PRECOMPILE=1, builds the tint_convert_cli host tool,
++    then runs the full GLSL → SPIR-V → WGSL precompilation pipeline.
+     """
+     output = str(target[0])
+-    if os.name == "nt" and os.environ.get("STUDIO_WEBGPU_PRECOMPILE") != "1":
+-        # The host-only converter takes hours to build under MinGW. The engine
++    if os.environ.get("GODOT_WEBGPU_PRECOMPILE") != "1":
++        # The host-only converter adds a separate native Tint build. The engine
+         # already links Tint and transparently converts cache misses at runtime,
+-        # so use the valid empty table unless a Windows release builder opts in.
++        # so use the valid empty table unless a release builder opts in.
+         generate_precompiled_header([], output)
+-        print("[WGSL Precompile] Windows host table skipped; runtime Tint enabled")
++        print("[WGSL Precompile] Host table skipped; runtime Tint enabled (opt in with GODOT_WEBGPU_PRECOMPILE=1)")
+         return
+ 
+     repo_root = str(env.Dir("#"))

@@ -1,0 +1,31 @@
+diff --git a/drivers/webgpu/rendering_device_driver_webgpu.cpp b/drivers/webgpu/rendering_device_driver_webgpu.cpp
+index dbe63a1..c1657b4 100644
+--- a/drivers/webgpu/rendering_device_driver_webgpu.cpp
++++ b/drivers/webgpu/rendering_device_driver_webgpu.cpp
+@@ -5390,19 +5390,18 @@ RDD::UniformSetID RenderingDeviceDriverWebGPU::uniform_set_create(VectorView<Bou
+ 					if (tex && tex->default_view) {
+ 						WGPUBindGroupEntry te = {};
+ 						te.binding = (swt_layout ? swt_layout->layout_entry.binding : uniform.binding * 2 + 1) + j * 2;
+-						// Check sample-count mismatch first: if the BGL expects a multisampled
+-						// texture but the bound texture isn't multisampled (or vice versa),
+-						// we can't use either the real texture or a non-MS fallback. Substitute
+-						// the MSAA fallback for this case. This handles ResolveRasterShaderRD
+-						// which binds an MSAA depth texture into a float MSAA slot (WebGPU
+-						// forbids sampling depth as float, so the MSAA fallback is used).
++						// An MSAA input requires an MSAA view. Depth formats also support
++						// UnfilterableFloat, so sampler2DMS depth loads must keep the real view.
++						// https://gpuweb.github.io/gpuweb/#texture-format-caps
+ 						bool tex_is_ms = (tex->sample_count > 1);
+-						bool depth_mismatch = _is_depth_format(tex->format) && swt_expected_sample != WGPUTextureSampleType_Depth;
++						bool depth_mismatch = _is_depth_format(tex->format) &&
++								swt_expected_sample != WGPUTextureSampleType_Depth &&
++								swt_expected_sample != WGPUTextureSampleType_UnfilterableFloat;
+ 						if (swt_expected_ms && (!tex_is_ms || depth_mismatch) &&
+ 								fallback_ms_texture_view != nullptr) {
+ 							te.textureView = fallback_ms_texture_view;
+ 						} else if (depth_mismatch && fallback_float_texture_view != nullptr) {
+-							// Preserve real depth views when the shader expects Depth.
++							// Other sample types cannot consume a depth view.
+ 							if (swt_expected_dim == WGPUTextureViewDimension_Cube && fallback_cube_texture_view != nullptr) {
+ 								te.textureView = fallback_cube_texture_view;
+ 							} else {

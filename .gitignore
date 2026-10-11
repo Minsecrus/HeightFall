@@ -16,6 +16,19 @@ TestResults/
 *.suo
 *.DotSettings.user
 
+# Web publish output
+game/HeightFall.web/
+game/HeightFall.WebGpu/AppBundle/
+webgpu/AppBundle/
+webgpu/node_modules/
+webgpu/wwwroot/vendor/
+
+# Local engine source and compiler cache
+.engine-cache/
+.venv/
+__pycache__/
+*.py[cod]
+
 # IDE
 .vs/
 .idea/

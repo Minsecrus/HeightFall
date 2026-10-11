@@ -3,3 +3,7 @@
 *.jpg binary
 *.ogg binary
 *.wav binary
+
+# Engine patches must apply to the upstream LF source tree on every host.
+# Context lines contain significant leading spaces before the original indent.
+engine/patches/*.patch text eol=lf -whitespace

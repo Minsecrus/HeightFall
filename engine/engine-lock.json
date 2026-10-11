@@ -1,0 +1,151 @@
+{
+  "schema": 1,
+  "godot": {
+    "repo": "https://github.com/thygrrr/godot.git",
+    "commit": "5fa0f824bf9223ab240658b85c061c171b5de677",
+    "version": "4.7.2",
+    "license": "MIT"
+  },
+  "webgpu": {
+    "repository": "lxsolutions/studio-foundation",
+    "commit": "ef064f08102bee78e7b27603b6ce40e92f3645ad",
+    "lineage_repository": "dwalter/godotwebgpu",
+    "lineage_commit": "f329e39ce8db7acaa5c9d6628a530fb769969228",
+    "license": "MIT"
+  },
+  "emscripten": "3.1.56",
+  "patches": [
+    {
+      "file": "patches/0001-studio-webgpu-engine.patch",
+      "sha256": "b521c25cf3f12c137e81fd2c79a2cbb6cfb0bd5c9fbf4c214a9b648597e7bb1f"
+    },
+    {
+      "file": "patches/0002-studio-webgpu-spirv.patch",
+      "sha256": "34430a24647d5c90a66647067f11cb80057ee368da5afc4bed37e01945eac888"
+    },
+    {
+      "file": "patches/0003-studio-webgpu-tint.patch",
+      "sha256": "cd299a648de80465b131834581cf6f53a3208c4100acf1257e4fe031198e370e"
+    },
+    {
+      "file": "patches/0004-godot-4.7.1-webgpu-interfaces.patch",
+      "sha256": "635e1318287b22202d7c0f840279756abd0887bfe63eddffa3a8ffcc908dd6cb"
+    },
+    {
+      "file": "patches/0005-webgpu-shell-capability-gate.patch",
+      "sha256": "1d46c4a3b1eeab439c036238af8eed522025a8526b3979b351ab9a0a67bbf9fa"
+    },
+    {
+      "file": "patches/0006-webgpu-single-thread-stdio.patch",
+      "sha256": "da1e4e44e414e888dce40ba6201240fdf5dfd0997913b127412cf82eca69b006"
+    },
+    {
+      "file": "patches/0007-tint-storage-buffer-access.patch",
+      "sha256": "708809d830b4559faadf62c11ed68a774dfb1897ddebbd04febf54089207baea"
+    },
+    {
+      "file": "patches/0008-tint-image-ordering.patch",
+      "sha256": "14af2071b54ca4233b7a5280f2b8c48052a94be18bc64c912c13d07a8576c6db"
+    },
+    {
+      "file": "patches/0009-tint-volatile-decoration.patch",
+      "sha256": "55e4611a21f3c809e3e3dbf0f6e3fb052f2a8f23e659ca91019306cd25b28fe0"
+    },
+    {
+      "file": "patches/0010-webgpu-transitive-sampler-split.patch",
+      "sha256": "ef6039b6c68077fd6956745a602778f986aadd15280e1e346f5a89d966c8de39"
+    },
+    {
+      "file": "patches/0011-webgpu-flatten-decoration-literals.patch",
+      "sha256": "118d06a98d3046010dfe4926698242792125aeb08eac55c65e2abd1e6a323b17"
+    },
+    {
+      "file": "patches/0012-tint-texture-function-params.patch",
+      "sha256": "b22a21de0dcc1e0df2ae8b50cac055635f48db7faace9917a03e620cbaee81ae"
+    },
+    {
+      "file": "patches/0013-webgpu-sampler-texture-stage-visibility.patch",
+      "sha256": "ce1a89673a1079cb6bc83e51b3090877ba26a3c6bf3cb684830b6895c6e66ffc"
+    },
+    {
+      "file": "patches/0014-webgpu-lit-shadow-sampler-types.patch",
+      "sha256": "0cc3be74445b94b123eab68131cb37968b6448211fe3506b93a28e3321a6f811"
+    },
+    {
+      "file": "patches/0015-webgpu-cluster-builder-no-subgroups.patch",
+      "sha256": "b2ed5031c57499485ffb2d2bab74f09c0d2a6414c5de1568abe370960997b274"
+    },
+    {
+      "file": "patches/0016-webgpu-offline-harness-engine-parity.patch",
+      "sha256": "b374826c0ce2b5b2b4c1300c5bf36635a4eafddf22eae096c698849835272364"
+    },
+    {
+      "file": "patches/0017-webgpu-ssr-filter-storage-format.patch",
+      "sha256": "3fc9535c727dc81ba27acf60961d652a78bd0350654ab479dab4a968e583bd64"
+    },
+    {
+      "file": "patches/0018-webgpu-forward-plus-runtime.patch",
+      "sha256": "e5321ec65b868de498796c368fa6dea319fa907c19952eb9d026b4cbb22597d1"
+    },
+    {
+      "file": "patches/0019-webgpu-integer-texture-sample-types.patch",
+      "sha256": "2888377fe462ec8895f8f269e452b3c1296819f22e31d2be0cf5cc9d8fd3d75b"
+    },
+    {
+      "file": "patches/0020-webgpu-lod-clamp-and-storage-sample-type.patch",
+      "sha256": "627a913efc6ee78a5ca4fc9ac562f29d0b015e3f44f25bc6d040e8af885c9131"
+    },
+    {
+      "file": "patches/0021-webgpu-storage-texture-formats.patch",
+      "sha256": "3e1e4a1ce9283988c735846c0059293fb4820cdb522c7a0f8e0bc803a3a36ca8"
+    },
+    {
+      "file": "patches/0022-webgpu-shadow-entry-sample-type.patch",
+      "sha256": "74040ab292528f380aee705a41033322322e4a831f481b778c052f1fab00fa52"
+    },
+    {
+      "file": "patches/0023-webgpu-stage-correct-storage-buffers.patch",
+      "sha256": "4bac47f889508b7ebda1be0611123f3ffd7a80716b5cff2b2ea231f54f953186"
+    },
+    {
+      "file": "patches/0024-webgpu-textureload-identifier-boundary.patch",
+      "sha256": "88c4fccfc02261c723458cb8bb8c3578514b31962fee40eec0f123e27f6df17f"
+    },
+    {
+      "file": "patches/0025-webgpu-render-pass-needs-an-attachment.patch",
+      "sha256": "70aaad56b61ea98fc17b3637692a1814f23767f8fc2a8248b1525d64332a4af7"
+    },
+    {
+      "file": "patches/0026-scene-shader-subgroup-fallback.patch",
+      "sha256": "8da9778c5958561535b533de639d9b5f076ce4f390992c13e239718cfd1e7886"
+    },
+    {
+      "file": "patches/0027-webgpu-request-depth32float-stencil8.patch",
+      "sha256": "da9d8947e48f1d0d0c281ba6cf30eab895cc5a0689c17abb8aec65cb175634b4"
+    },
+    {
+      "file": "patches/0028-webgpu-depth-support-from-the-device.patch",
+      "sha256": "d9bf864c6e567ea77e8ec3ad734ce9571895d91ef150c5cab27f6846bd4adf11"
+    },
+    {
+      "file": "patches/0029-webgpu-unused-color-targets-are-absent.patch",
+      "sha256": "6da7b9fecb477ac6ac288270e38e500159827b9e931a132a4908b57bbb2aab50"
+    },
+    {
+      "file": "patches/0030-webgpu-view-format-follows-the-texture.patch",
+      "sha256": "c63417574fd85a672ca884b535f2d1ca7c29ac997959de94afe29809ed3df809"
+    },
+    {
+      "file": "patches/0031-webgpu-shared-view-physical-format-invariant.patch",
+      "sha256": "faab98a67f18d0e74c6389af485e8c59e197224ec377ffc34f209b65045a35f0"
+    },
+    {
+      "file": "patches/0032-godot-ssao-interleave-r8-backport.patch",
+      "sha256": "0c662817a350eb423e14baee160bc0777c838591c797f49667574719a573e83a"
+    },
+    {
+      "file": "patches/0033-godot-volumetric-fog-remove-unused-shadow-sampler.patch",
+      "sha256": "19aa5fa40d832d36b430b5489f90617fdef17a68667e4b89526cc4791f57867a"
+    }
+  ]
+}

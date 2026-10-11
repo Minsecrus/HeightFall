@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <_HeightFallParentProps>$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))</_HeightFallParentProps>
+  </PropertyGroup>
+  <Import Project="$(_HeightFallParentProps)" Condition="'$(_HeightFallParentProps)' != ''" />
+  <PropertyGroup>
+    <TwoDogVersion>4.7.2.113</TwoDogVersion>
+    <TwoDogNativesVersion>4.7.2.21</TwoDogNativesVersion>
+  </PropertyGroup>
+  <!-- Restore must receive HeightFallWebGpu as a global property so both hosts
+       resolve the same game project with separate outputs and binding assets. -->
+  <PropertyGroup Condition="'$(HeightFallWebGpu)' == 'true' And '$(MSBuildProjectName)' == 'HeightFall'">
+    <BaseOutputPath>$(MSBuildThisFileDirectory).godot/mono/webgpu/bin/</BaseOutputPath>
+    <OutputPath>$(BaseOutputPath)$(Configuration)/</OutputPath>
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory).godot/mono/webgpu/obj/</BaseIntermediateOutputPath>
+    <IntermediateOutputPath>$(BaseIntermediateOutputPath)$(Configuration)/</IntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(BaseIntermediateOutputPath)</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

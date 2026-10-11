@@ -1,0 +1,9 @@
+<Project>
+  <PropertyGroup>
+    <_HeightFallWebGpuParentProps>$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))</_HeightFallWebGpuParentProps>
+  </PropertyGroup>
+  <Import Project="$(_HeightFallWebGpuParentProps)" Condition="'$(_HeightFallWebGpuParentProps)' != ''" />
+  <PropertyGroup>
+    <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
+  </PropertyGroup>
+</Project>

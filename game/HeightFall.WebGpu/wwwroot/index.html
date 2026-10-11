@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f3">
+  <title>HeightFall</title>
+  <link rel="preload" href="./godot.wasm" as="fetch" crossorigin="anonymous">
+  <link rel="preload" href="./godot.pck" as="fetch" crossorigin="anonymous">
+  <link rel="modulepreload" href="./_framework/dotnet.js">
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #f5f5f3; }
+    #canvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
+    #canvas[hidden] { display: none; }
+    #status, noscript { position: fixed; inset: 0; display: grid; place-content: center; gap: 1rem; padding: 2rem; background: #f5f5f3; color: #393c40; font: 16px/1.6 system-ui, sans-serif; text-align: center; z-index: 1; }
+    #status[hidden] { display: none; }
+    #status strong { font-size: 1.4rem; }
+    #status-message { max-width: 42rem; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+    #progress { width: min(28rem, 75vw); }
+    #retry { justify-self: center; font: inherit; padding: .35rem 1rem; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas" tabindex="0" aria-label="HeightFall 游戏场景">此浏览器不支持 Canvas。</canvas>
+  <noscript>请启用 JavaScript 后运行 HeightFall。</noscript>
+  <div id="status" role="status" aria-live="polite">
+    <strong id="status-title">HeightFall</strong>
+    <p id="status-message">正在启动游戏，首次加载需要下载引擎与对局逻辑。</p>
+    <progress id="progress"></progress>
+    <button id="retry" type="button" hidden>重新载入</button>
+  </div>
+  <script src="./godot.js"></script>
+  <script>
+    'use strict';
+    const status = document.getElementById('status');
+    const statusTitle = document.getElementById('status-title');
+    const statusMessage = document.getElementById('status-message');
+    const progress = document.getElementById('progress');
+    const retry = document.getElementById('retry');
+    let engine;
+    let renderingFailed = false;
+    retry.addEventListener('click', () => location.reload());
+
+    function showFailure(error) {
+      console.error(error);
+      renderingFailed = true;
+      document.getElementById('canvas').hidden = true;
+      status.hidden = false;
+      statusTitle.textContent = '游戏启动失败';
+      statusMessage.textContent = error instanceof Error ? error.message : String(error);
+      progress.hidden = true;
+      retry.hidden = false;
+    }
+
+    const GODOT_CONFIG = {
+      args: ['--rendering-driver', 'webgpu', '--rendering-method', 'forward_plus'],
+      canvas: document.getElementById('canvas'),
+      canvasResizePolicy: 2,
+      ensureCrossOriginIsolationHeaders: false,
+      executable: 'godot',
+      experimentalVK: false,
+      focusCanvas: true,
+      gdextensionLibs: [],
+      renderingDriver: 'webgpu',
+      onProgress(current, total) {
+        if (total > 0) {
+          progress.max = total;
+          progress.value = current;
+        } else progress.removeAttribute('value');
+      },
+      onExit(code) {
+        if (code !== 0) showFailure(new Error('游戏运行已停止，退出代码：' + code));
+      }
+    };
+
+    (async () => {
+      if (!window.isSecureContext) throw new Error('WebGPU 需要 HTTPS 或 localhost 安全环境。');
+      if (!navigator.gpu) throw new Error('浏览器没有提供 WebGPU。请使用支持 WebGPU 的浏览器并启用硬件加速。');
+      if (typeof Engine === 'undefined') throw new Error('Godot 引擎启动脚本未加载，请重新载入。');
+      const missing = Engine.getMissingFeatures({threads: false, webgl: false});
+      if (missing.length) throw new Error('浏览器缺少运行游戏所需功能：\n' + missing.join('\n'));
+      const device = await Engine.requestWebGPUDevice();
+      device.lost.then(info => {
+        if (!renderingFailed) {
+          showFailure(new Error('WebGPU 设备已停止运行：\n' + info.message));
+          engine?.requestQuit();
+        }
+      });
+      device.addEventListener('uncapturederror', event => {
+        showFailure(new Error('WebGPU 渲染失败：\n' + event.error.message));
+        try {
+          engine?.requestQuit();
+        } finally {
+          device.destroy();
+        }
+      }, {once: true});
+      GODOT_CONFIG.preinitializedWebGPUDevice = device;
+      engine = new Engine(GODOT_CONFIG);
+      await engine.startGame({});
+      if (!renderingFailed) {
+        statusMessage.textContent = '正在编译首次使用的场景着色器，完成后显示游戏画面。';
+        progress.removeAttribute('value');
+        // Let the first native render frames complete before exposing the canvas.
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+      status.hidden = !renderingFailed;
+    })().catch(showFailure);
+  </script>
+</body>
+</html>

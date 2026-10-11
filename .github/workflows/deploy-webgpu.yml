@@ -1,0 +1,67 @@
+name: Deploy Godot WebGPU to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - name: Install matching WebAssembly compiler
+        run: dotnet workload install wasm-tools --skip-manifest-update
+      - name: Test simulation
+        run: dotnet test tests/HeightFall.Sim.Tests/HeightFall.Sim.Tests.csproj -c Release --nologo
+      - name: Cache pinned engine sources and native objects
+        uses: actions/cache@v6
+        with:
+          path: .engine-cache
+          key: godot-webgpu-${{ runner.os }}-emscripten-3.1.56-${{ hashFiles('engine/engine-lock.json', 'engine/patches/**', 'engine/toolchain/**', 'engine/tests/**', 'engine/prepare_engine.py', 'engine/pyproject.toml', 'engine/uv.lock', 'tools/build-godot-webgpu.ps1') }}
+      - name: Build original Godot game with WebGPU backend
+        shell: pwsh
+        run: ./tools/build-webgpu.ps1 -Jobs 4
+      - name: Check webpage bundle
+        shell: pwsh
+        run: |
+          $bundle = 'game/HeightFall.WebGpu/AppBundle'
+          foreach ($file in @('index.html', 'godot.js', 'godot.wasm', 'godot.pck', '_framework/dotnet.js')) {
+            if (!(Test-Path -LiteralPath "$bundle/$file")) { throw "Missing published file: $file" }
+          }
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: game/HeightFall.WebGpu/AppBundle
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
