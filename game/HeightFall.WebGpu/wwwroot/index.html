@@ -19,6 +19,9 @@
     #status-message { max-width: 42rem; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
     #progress { width: min(28rem, 75vw); }
     #retry { justify-self: center; font: inherit; padding: .35rem 1rem; cursor: pointer; }
+    #rotate-hint { position: fixed; top: calc(var(--safe-area-top) + 60px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: .45rem; padding-left: .85rem; border: 1px solid #c9d0d6; border-radius: 22px; background: rgba(255, 255, 255, .94); color: #393c40; font: 14px/1.2 system-ui, sans-serif; white-space: nowrap; z-index: 1; }
+    #rotate-hint[hidden] { display: none; }
+    #rotate-hint button { width: 44px; height: 44px; margin-left: -.35rem; border: 0; background: none; color: inherit; font: 22px/1 system-ui, sans-serif; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -29,6 +32,11 @@
     <p id="status-message">正在启动游戏，首次加载需要下载引擎与对局逻辑。</p>
     <progress id="progress"></progress>
     <button id="retry" type="button" hidden>重新载入</button>
+  </div>
+  <div id="rotate-hint" role="status" hidden>
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="8" width="19" height="11" rx="2"/><path d="M17.5 13.5h.01M7 4.5a8 8 0 0 1 9 0"/><path d="m14.5 2.8 1.6 1.7-2 .9"/></svg>
+    <span>横屏游玩体验更好</span>
+    <button type="button" aria-label="关闭提示">×</button>
   </div>
   <script src="./godot.js"></script>
   <script>
@@ -47,6 +55,25 @@
     document.addEventListener('visibilitychange', () => { if (document.hidden) cancelTouchInput(); });
     retry.addEventListener('click', () => location.reload());
 
+    // Portrait stays playable; phones only get a dismissible suggestion to rotate.
+    const rotateHint = document.getElementById('rotate-hint');
+    const portraitTouch = matchMedia('(orientation: portrait) and (pointer: coarse)');
+    let rotateHintDismissed = false;
+    try {
+      rotateHintDismissed = localStorage.getItem('heightfall.rotateHintDismissed') === '1';
+    } catch {}
+    function updateRotateHint() {
+      rotateHint.hidden = rotateHintDismissed || !status.hidden || !portraitTouch.matches;
+    }
+    portraitTouch.addEventListener('change', updateRotateHint);
+    rotateHint.querySelector('button').addEventListener('click', () => {
+      rotateHintDismissed = true;
+      try {
+        localStorage.setItem('heightfall.rotateHintDismissed', '1');
+      } catch {}
+      updateRotateHint();
+    });
+
     function showFailure(error) {
       console.error(error);
       renderingFailed = true;
@@ -56,6 +83,7 @@
       statusMessage.textContent = error instanceof Error ? error.message : String(error);
       progress.hidden = true;
       retry.hidden = false;
+      updateRotateHint();
     }
 
     const GODOT_CONFIG = {
@@ -110,6 +138,7 @@
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       }
       status.hidden = !renderingFailed;
+      updateRotateHint();
     })().catch(showFailure);
   </script>
 </body>

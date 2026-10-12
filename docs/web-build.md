@@ -136,9 +136,11 @@ dotnet dnx dotnet-serve -d game/HeightFall.WebGpu/AppBundle -a 127.0.0.1 -p 8000
 
 中文使用仓库内的 Noto Sans CJK SC 子集作为原字体的 fallback，保留拉丁字母和数字的原字体。字体覆盖商店、装备名和模拟层错误提示，来源与重建命令见 [字体说明](../game/fonts/README.md)，许可证见 [OFL.txt](../game/fonts/OFL.txt)；网页发布会复制为 `licenses/Noto-CJK-OFL.txt`。
 
-触屏布局使用 960×540 逻辑基准并随横竖屏调整；桌面保留 1600×900 基准。Web 安全边距从 CSS `safe-area-inset-*` 取得，再转换到 Godot 逻辑坐标。浏览器的触摸取消、失焦、页面隐藏或布局变化会取消持有的手势，避免松开时误施法或摇杆卡住。
+触屏布局使用 960×540 逻辑基准并随横竖屏调整；桌面保留 1600×900 基准。网页不锁定屏幕方向：主要指针为触屏（`pointer: coarse`）且视口为竖屏时，游戏画面显示后在顶部提示「横屏游玩体验更好」，转为横屏后自动隐藏，点 × 关闭后通过 `localStorage` 记住不再显示。Web 安全边距从 CSS `safe-area-inset-*` 取得，再转换到 Godot 逻辑坐标。浏览器的触摸取消、失焦、页面隐藏或布局变化会取消持有的手势，避免松开时误施法或摇杆卡住。
 
-Windows、Linux、macOS、Android、iOS 和 Web 是这套 Godot 源代码的移植目标。目前实际运行验证以 Windows 和下节记录的 WebGPU 浏览器检查为限，仓库导出预设仅有 WebGPU；其他平台仍需要各自的 SDK、模板、导出配置和设备验证，不能据此声称已有六平台发布产物。
+Windows、Linux、macOS、Android、iOS 和 Web 是这套 Godot 源代码的移植目标。目前实际运行验证以 Windows、下节记录的 WebGPU 浏览器检查和 Android 调试包为限，仓库导出预设有 WebGPU 和 Android；其他平台仍需要各自的 SDK、模板、导出配置和设备验证，不能据此声称已有六平台发布产物。
+
+Android 导出需要 Godot 4.7.2 .NET 版的 Android 导出模板、Android SDK，以及编辑器设置中的 Java SDK 路径。该版本的 .NET Android 模板运行在 .NET 9 上，因此 `game/HeightFall.csproj` 在 `GodotTargetPlatform` 为 `android` 时改用 `net9.0`；项目设置已开启 Android 必需的 ETC2 / ASTC 纹理导入。通过 WinGet 安装的 Godot 需要用安装目录中的真实可执行文件导出，经由 `WinGet\Links` 中的链接启动时会找不到 `GodotSharp`。
 
 本次触屏、HUD 和商店改动可先运行以下检查；命令列出的是验证入口，不表示本次所有检查已经完成：
 
@@ -151,6 +153,8 @@ dotnet test tests/HeightFall.Sim.Tests/HeightFall.Sim.Tests.csproj -c Debug --no
 运行时应分别核对键鼠与触屏买卖、6 格容量和失败提示、头顶生命 / 法力 / 等级同步、横竖屏及刘海边距，以及双指移动加瞄准、取消、失焦和商店开关。真实 Android / iOS 设备的触摸和 WebGPU 能力需另行确认；桌面浏览器的移动仿真不能代替设备覆盖。
 
 ## 验证与部署状态
+
+2026-10-12 的手机验证（Android 16，Adreno 830）：Android 调试包导出、安装并启动成功，使用 Vulkan Mobile 渲染器，系统方向切到竖屏时游戏仍保持横屏，触屏布局自动启用；Mobile 渲染器不支持 SSAO，启动时有一条忽略该设置的警告。手机 Chrome 154 的网页竖屏时正确显示横屏提示，提示位于金币和顶栏下方。网页频繁卡顿 200–460ms 的原因是小兵堵塞后重新寻路时终点被占，A* 搜遍整张地图（每次约 1.3 万格），在 wasm 解释器里开销很大；限制搜索后，桌面基准 5 分钟对局的寻路总耗时由约 525ms 降到约 13ms，4052 次寻路的终点与原结果完全一致。修复后的网页尚未在手机上重新测量卡顿。
 
 2026-10-11 的触屏、HUD 和商店本机验证：`HeightFall.sln` Debug 构建通过，0 警告、0 错误；21 项模拟层测试通过。临时 Godot 输入场景通过 81 项断言，使用真实 `Input.ParseInputEvent` 核对双指移动与瞄准、施法与取消、触摸取消、失焦、横竖屏、同批输入切英雄、触摸与桌面鼠标买卖、商店输入屏蔽及桌面按键松开施法。临时场景未加入发布产物。Windows Vulkan 的 844×390、390×844 和 1600×900 商店截图已检查，中文及布局完整。
 
