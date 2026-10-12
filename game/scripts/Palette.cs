@@ -23,8 +23,10 @@ public static class Palette
     /// <summary>分层设色：每级高度一种颜色，低处偏冷、高处偏暖偏深，相差 1 级也能分清。</summary>
     static readonly Color[] HeightRamp =
     [
-        new("#D3DDE6"), new("#E1E9EE"), new("#F5F5F3"), new("#ECEAE3"),
-        new("#E3DFD4"), new("#D9D3C5"), new("#CFC8B7"), new("#C4BCA9"),
+        new("#8DA1BE"), new("#9BADC6"), new("#A9B9CE"), new("#B7C5D6"),
+        new("#C5D1DE"), new("#D3DDE6"), new("#E1E9EE"), new("#F5F5F3"),
+        new("#ECEAE3"), new("#E3DFD4"), new("#D9D3C5"), new("#CFC8B7"),
+        new("#C4BCA9"), new("#BBB29E"), new("#B2A893"), new("#A99E88"),
     ];
 
     /// <summary>兵线和坡道比同高度的地面略深一点。</summary>

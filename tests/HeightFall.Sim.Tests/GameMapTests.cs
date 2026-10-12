@@ -14,15 +14,15 @@ public class GameMapTests
         var neighbor = new GridPos(2, 1);
         map.SetFixed(new GridPos(3, 3));
 
-        map.AddHeightModifier(tile, +3, durationTicks: 2);
-        map.AddHeightModifier(tile, +4, durationTicks: 5);
+        map.AddHeightModifier(tile, +4, durationTicks: 2);
+        map.AddHeightModifier(tile, +5, durationTicks: 5);
         Assert.Equal(HeightRules.Max, map.HeightAt(tile));
         Assert.False(map.CanStep(neighbor, tile));
         Assert.True(map.CanStep(tile, neighbor));
 
         map.Tick();
         map.Tick();
-        Assert.Equal(6, map.HeightAt(tile));
+        Assert.Equal(HeightRules.Ground + 5, map.HeightAt(tile));
 
         for (var i = 0; i < 3; i++)
             map.Tick();

@@ -32,6 +32,7 @@ public sealed partial class World
             if (s.Kind == StructureKind.Fountain)
                 _fountains[s.Team] = unit;
         }
+        RefreshShields();
     }
 
     public MapLayout Layout { get; }
@@ -55,8 +56,11 @@ public sealed partial class World
 
     internal void Emit(GameEvent e) => _events.Add(e);
 
+    /// <summary>推进一个逻辑帧；决出胜负后不再推进。</summary>
     public void Step()
     {
+        if (Winner is not null)
+            return;
         Map.Tick();
         RunScheduled();
         SpawnWavesIfDue();
@@ -70,11 +74,12 @@ public sealed partial class World
         _telegraphs.RemoveAll(t => t.EndTick < Tick);
     }
 
-    /// <summary>在己方泉水生成英雄，默认召唤师技能为闪现；post 为空闲时返回的驻守点。</summary>
+    /// <summary>在己方泉水生成英雄，带开局金币，默认召唤师技能为闪现；post 为空闲时返回的驻守点。</summary>
     public Unit SpawnHero(UnitDef def, Team team, GridPos? post = null)
     {
         var center = FountainCenter(team);
         var hero = AddUnit(def, team, FindStandableNear(center, 8) ?? center);
+        hero.Gold = GameRules.StartingGold;
         hero.Post = post;
         hero.Summoner = Summoners.Flash;
         hero.SkillLevelValues[Unit.SummonerSlot] = 1;
@@ -166,13 +171,15 @@ public sealed partial class World
             Fall(unit, oldHeight - newHeight);
     }
 
+    /// <summary>坠落同时眩晕并受到物理伤害，两者都只由落差决定，与地形是谁改变的无关。</summary>
     internal void Fall(Unit u, int drop)
     {
         Stun(u, HeightRules.FallStunSeconds(drop));
         Emit(new FallEvent(u, drop));
+        DealDamage(null, u, HeightRules.FallDamage(drop), DamageType.Physical);
     }
 
-    Unit AddUnit(UnitDef def, Team team, GridPos pos)
+    internal Unit AddUnit(UnitDef def, Team team, GridPos pos)
     {
         var unit = new Unit(_nextId++, def, team, pos);
         _units.Add(unit);

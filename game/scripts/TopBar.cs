@@ -41,6 +41,21 @@ public partial class TopBar : Control
         var lastHitX = TouchMode ? 138 : 86;
         DrawRect(new Rect2(x + lastHitX, 14, 12, 12), Palette.Neutral);
         DrawString(font, new Vector2(x + lastHitX + 20, baseline), $"{hero.LastHits} / {hero.Denies}", fontSize: TouchMode ? 24 : 15, modulate: Palette.Neutral);
+
+        if (World.Winner is { } winner)
+            DrawResult(winner == Viewer, width, GetViewportRect().Size.Y - y);
+    }
+
+    /// <summary>基地核心被摧毁后，画面中央显示胜负，对局停止推进。</summary>
+    void DrawResult(bool victory, float width, float height)
+    {
+        var font = ThemeDB.FallbackFont;
+        var size = new Vector2(TouchMode ? 360 : 300, TouchMode ? 120 : 100);
+        var box = new Rect2(new Vector2(width, height) / 2 - size / 2, size);
+        DrawRect(box, Colors.White);
+        DrawRect(box, victory ? Palette.Ally : Palette.Enemy, filled: false, width: 2f);
+        DrawString(font, new Vector2(box.Position.X, box.GetCenter().Y + (TouchMode ? 18 : 15)), victory ? "胜利" : "失败",
+            HorizontalAlignment.Center, box.Size.X, TouchMode ? 52 : 44, victory ? Palette.Ally : Palette.Enemy);
     }
 
     /// <summary>击杀数紧贴中间的时间，队伍色小方块在外侧。</summary>

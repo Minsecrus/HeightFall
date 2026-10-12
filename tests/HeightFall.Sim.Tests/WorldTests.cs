@@ -34,7 +34,7 @@ public class WorldTests
 
         Assert.True(victim.IsStunned);
         Assert.True(victim.Hp < victim.MaxHp);
-        Assert.Equal(HeightRules.Pit, world.Map.HeightAt(victim.Pos));
+        Assert.Equal(HeightRules.Ground - 2, world.Map.HeightAt(victim.Pos));
         Assert.Contains(world.DrainEvents(), e => e is FallEvent { Drop: 2 } fall && fall.Unit == victim);
     }
 
@@ -49,7 +49,7 @@ public class WorldTests
 
         Assert.True(world.OrderRecall(hero));
         world.Step();
-        world.DealDamage(enemy, hero, 10, DamageType.Pure);
+        world.DealDamage(enemy, hero, 10, DamageType.Physical);
         Assert.False(hero.IsRecalling);
 
         Assert.True(world.OrderRecall(hero));

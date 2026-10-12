@@ -106,6 +106,14 @@ public partial class EffectsView : Node3D
                 SpawnRing(home, 0.2f, 1.6f, TeamColor(recall.Unit.Team), 0.45f);
                 Burst(home + Vector3.Up * 0.6f, 12, TeamColor(recall.Unit.Team), 3.5f, 0.09f, upward: true);
                 break;
+            case ProjectileBlockedEvent blocked:
+                // 投射物撞上地形，溅起几块碎屑
+                var wall = new Vector3(blocked.Projectile.Position.X, blocked.Projectile.Height * WorldSpace.LevelHeight, -blocked.Projectile.Position.Y);
+                Burst(wall, 4, Palette.Rock, 1.8f, 0.06f);
+                break;
+            case GameOverEvent:
+                CameraRig.Shake(0.3f);
+                break;
             case FallEvent fall:
                 // 落差越大，尘土越多
                 var ground = WorldSpace.TileCenter(World.Map, fall.Unit.Pos);
@@ -121,13 +129,13 @@ public partial class EffectsView : Node3D
     {
         Units.Flash(d.Target.Id);
         var target = UnitCenter(d.Target);
-        if (!d.FromSkill && d.Source.Def.ProjectileSpeed == 0 && !d.Source.IsStructure)
-            Units.Lunge(d.Source.Id, target - UnitCenter(d.Source));
+        if (!d.FromSkill && d.Source is { Def.ProjectileSpeed: 0f, IsStructure: false } melee)
+            Units.Lunge(melee.Id, target - UnitCenter(melee));
         if (!d.Target.IsStructure)
-            Burst(target, d.FromSkill ? 6 : 3, d.FromSkill ? TeamColor(d.Source.Team) : Palette.Unit, 2.5f, 0.08f);
+            Burst(target, d.FromSkill ? 6 : 3, d.FromSkill && d.Source is not null ? TeamColor(d.Source.Team) : Palette.Unit, 2.5f, 0.08f);
 
         // 只显示与英雄有关的伤害，避免小兵互殴刷屏
-        if (d.Source.IsHero || d.Target.IsHero)
+        if (d.Source is { IsHero: true } || d.Target.IsHero)
         {
             var color = d.Target.Team == Viewer ? Palette.Enemy : Palette.Neutral;
             SpawnNumber(target + Vector3.Up * 1.4f, Mathf.RoundToInt(d.Amount), color, d.FromSkill ? 64 : 44);

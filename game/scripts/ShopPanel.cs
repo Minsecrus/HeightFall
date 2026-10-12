@@ -10,6 +10,8 @@ namespace HeightFall.Game;
 public partial class ShopPanel : Control
 {
     const float Gap = 12f;
+    const int CatalogColumns = 3;
+    const int CatalogRows = 3;
     static readonly string[] CategoryNames = ["全部", "攻击", "防御", "移动"];
     static readonly Color Border = new("#D9D9D7");
     static readonly Color Muted = new("#898986");
@@ -21,10 +23,15 @@ public partial class ShopPanel : Control
     public bool IsOpen => Visible;
     public event Action? Closed;
 
+    // _catalog 是当前分类的全部装备；_visible 是滚动后可见的装备，与 _itemCards 一一对应。
     readonly List<int> _catalog = new();
+    readonly List<int> _visible = new();
     readonly Rect2[] _categoryButtons = new Rect2[4];
     readonly Rect2[] _inventorySlots = new Rect2[Unit.InventoryCapacity];
     readonly List<Rect2> _itemCards = new();
+    int _catalogRow;
+    int _touchScrollRow;
+    bool _touchInCatalog;
     Rect2 _card;
     Rect2 _detail;
     Rect2 _buyButton;
@@ -172,6 +179,8 @@ public partial class ShopPanel : Control
                 _touchPress = point;
                 _touchCancelSerial = cancelSerial;
                 _touchMoved = false;
+                _touchScrollRow = _catalogRow;
+                _touchInCatalog = CatalogArea().HasPoint(point);
             }
             return;
         }
@@ -182,6 +191,9 @@ public partial class ShopPanel : Control
             {
                 var point = ToCard(GetGlobalTransformWithCanvas().AffineInverse() * drag.Position);
                 if (point.DistanceTo(_touchPress) > 24f) _touchMoved = true;
+                // 在装备列表上滑动按整行滚动；移动过的手指松开时不再选中装备。
+                if (_touchInCatalog)
+                    ScrollCatalog(_touchScrollRow + Mathf.RoundToInt((_touchPress.Y - point.Y) / (CardSize().Y + Gap)));
                 if (TouchPlatform.ReadCancelSerial() != _touchCancelSerial) ClearInteraction();
             }
             return;
@@ -195,6 +207,12 @@ public partial class ShopPanel : Control
         if (!IsOpen) return;
         AcceptEvent();
         if (e is InputEventMouse { Device: -1 }) return;
+        if (e is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown } wheel)
+        {
+            if (CatalogArea().HasPoint(ToCard(wheel.Position)))
+                ScrollCatalog(_catalogRow + (wheel.ButtonIndex == MouseButton.WheelDown ? 1 : -1));
+            return;
+        }
         if (e is not InputEventMouseButton { ButtonIndex: MouseButton.Left } click) return;
         var point = ToCard(click.Position);
         if (click.Pressed)
@@ -222,18 +240,46 @@ public partial class ShopPanel : Control
     void RefreshCatalog()
     {
         _catalog.Clear();
-        _itemCards.Clear();
         for (var i = 0; i < Items.All.Count; i++)
-        {
-            var item = Items.All[i];
-            if (_category > 0 && (int)item.Category != _category - 1) continue;
-            _catalog.Add(i);
-            var index = _catalog.Count - 1;
-            var width = _portrait ? 216f : 174.66f;
-            var height = _portrait ? 120f : 84f;
-            _itemCards.Add(new Rect2(24 + index % 3 * (width + Gap), 154 + index / 3 * (height + Gap), width, height));
-        }
+            if (_category == 0 || (int)Items.All[i].Category == _category - 1)
+                _catalog.Add(i);
         if (_catalog.Count > 0 && !_catalog.Contains(_selectedCatalog)) _selectedCatalog = _catalog[0];
+        _catalogRow = Math.Clamp(_catalogRow, 0, MaxCatalogRow());
+        LayoutCatalog();
+    }
+
+    /// <summary>装备列表一次显示 3 行，装备更多时按整行滚动，不会露出半张卡片。</summary>
+    void LayoutCatalog()
+    {
+        _visible.Clear();
+        _itemCards.Clear();
+        var size = CardSize();
+        var first = _catalogRow * CatalogColumns;
+        for (var i = first; i < Math.Min(_catalog.Count, first + CatalogColumns * CatalogRows); i++)
+        {
+            var index = i - first;
+            _visible.Add(_catalog[i]);
+            _itemCards.Add(new Rect2(new Vector2(24 + index % CatalogColumns * (size.X + Gap), 154 + index / CatalogColumns * (size.Y + Gap)), size));
+        }
+    }
+
+    Vector2 CardSize() => _portrait ? new Vector2(216f, 120f) : new Vector2(174.66f, 84f);
+
+    Rect2 CatalogArea()
+    {
+        var size = CardSize();
+        return new Rect2(24, 154, CatalogColumns * size.X + (CatalogColumns - 1) * Gap, CatalogRows * size.Y + (CatalogRows - 1) * Gap);
+    }
+
+    int MaxCatalogRow() => Math.Max(0, (_catalog.Count + CatalogColumns - 1) / CatalogColumns - CatalogRows);
+
+    void ScrollCatalog(int row)
+    {
+        row = Math.Clamp(row, 0, MaxCatalogRow());
+        if (row == _catalogRow) return;
+        _catalogRow = row;
+        LayoutCatalog();
+        QueueRedraw();
     }
 
     (string Kind, int Index)? HitTest(Vector2 point)
@@ -260,7 +306,7 @@ public partial class ShopPanel : Control
         Consider(_closeButton, "close", 0);
         Consider(_heroButton, "hero", 0);
         for (var i = 0; i < _categoryButtons.Length; i++) Consider(_categoryButtons[i], "category", i);
-        for (var i = 0; i < _itemCards.Count; i++) Consider(_itemCards[i], "item", _catalog[i]);
+        for (var i = 0; i < _itemCards.Count; i++) Consider(_itemCards[i], "item", _visible[i]);
         for (var i = 0; i < _inventorySlots.Length; i++) Consider(_inventorySlots[i], "inventory", i);
         Consider(_buyButton, "buy", 0);
         Consider(_sellButton, "sell", 0);
@@ -291,7 +337,7 @@ public partial class ShopPanel : Control
         for (var i = 0; i < _categoryButtons.Length; i++)
             if (_categoryButtons[i].HasPoint(point)) return ("category", i);
         for (var i = 0; i < _itemCards.Count; i++)
-            if (_itemCards[i].HasPoint(point)) return ("item", _catalog[i]);
+            if (_itemCards[i].HasPoint(point)) return ("item", _visible[i]);
         for (var i = 0; i < _inventorySlots.Length; i++)
             if (_inventorySlots[i].HasPoint(point)) return ("inventory", i);
         if (_buyButton.HasPoint(point)) return ("buy", 0);
@@ -328,6 +374,7 @@ public partial class ShopPanel : Control
                 break;
             case ("category", var category):
                 _category = category;
+                _catalogRow = 0;
                 _selectedInventory = -1;
                 RefreshCatalog();
                 break;
@@ -388,7 +435,8 @@ public partial class ShopPanel : Control
         DrawLine(_closeButton.GetCenter() + new Vector2(-9, 9), _closeButton.GetCenter() + new Vector2(9, -9), Muted, 2.5f, true);
         for (var i = 0; i < _categoryButtons.Length; i++)
             Button(_categoryButtons[i], CategoryNames[i], _category == i, true, _portrait ? 24 : 20);
-        for (var i = 0; i < _itemCards.Count; i++) DrawItemCard(_itemCards[i], Items.All[_catalog[i]], _catalog[i]);
+        for (var i = 0; i < _itemCards.Count; i++) DrawItemCard(_itemCards[i], Items.All[_visible[i]], _visible[i]);
+        DrawCatalogScrollbar();
         DrawDetail();
         DrawInventory();
         if (_feedback is not null)
@@ -416,6 +464,18 @@ public partial class ShopPanel : Control
             Text(rect.Position + new Vector2(56, 34), item.Name, 19, Palette.Neutral, rect.Size.X - 64);
             Text(rect.Position + new Vector2(56, 62), $"{item.Cost}", 18, Player.Hero.Gold >= item.Cost ? Palette.Gold : Muted);
         }
+    }
+
+    void DrawCatalogScrollbar()
+    {
+        var maxRow = MaxCatalogRow();
+        if (maxRow == 0) return;
+        var area = CatalogArea();
+        var track = new Rect2(area.End.X + 8, area.Position.Y, 4, area.Size.Y);
+        var rows = maxRow + CatalogRows;
+        DrawRect(track, Track);
+        DrawRect(new Rect2(track.Position.X, track.Position.Y + track.Size.Y * _catalogRow / rows,
+            track.Size.X, track.Size.Y * CatalogRows / rows), Muted);
     }
 
     void DrawDetail()
@@ -471,8 +531,10 @@ public partial class ShopPanel : Control
         var result = new List<string>(5);
         if (item.HpBonus != 0) result.Add($"生命 +{item.HpBonus:0.#}");
         if (item.ManaBonus != 0) result.Add($"法力 +{item.ManaBonus:0.#}");
-        if (item.DamageBonus != 0) result.Add($"攻击 +{item.DamageBonus:0.#}");
-        if (item.ArmorBonus != 0) result.Add($"护甲 +{item.ArmorBonus:0.#}");
+        if (item.PhysicalAttackBonus != 0) result.Add($"物攻 +{item.PhysicalAttackBonus:0.#}");
+        if (item.MagicAttackBonus != 0) result.Add($"法攻 +{item.MagicAttackBonus:0.#}");
+        if (item.PhysicalDefenseBonus != 0) result.Add($"物防 +{item.PhysicalDefenseBonus:0.#}");
+        if (item.MagicDefenseBonus != 0) result.Add($"法防 +{item.MagicDefenseBonus:0.#}");
         if (item.MoveSpeedBonus != 0) result.Add($"移速 +{item.MoveSpeedBonus:0.##}");
         return result;
     }
@@ -482,7 +544,9 @@ public partial class ShopPanel : Control
         var icon = item.Icon switch
         {
             "sword" or "axe" or "spear" => "arrow",
+            "staff" or "tome" or "orb" => "spark",
             "shield" or "armor" => "purify",
+            "cloak" or "robe" => "ward",
             "boots" => "sprint",
             "ruby" => "heal",
             "sapphire" => "restore",

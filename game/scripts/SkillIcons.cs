@@ -116,6 +116,15 @@ public static class SkillIcons
                     canvas.DrawLine(c + dir * 0.35f * s, c + dir * 0.9f * s, color, Width, true);
                 }
                 break;
+            case "spark":
+                // 四角星：法攻装备
+                Star(canvas, c, 0.95f * s, color);
+                break;
+            case "ward":
+                // 圆形护罩里一颗小四角星：法防装备
+                canvas.DrawArc(c, 0.85f * s, 0, Mathf.Tau, 32, color, Width, true);
+                Star(canvas, c, 0.45f * s, color);
+                break;
             default:
                 canvas.DrawCircle(c, 0.3f * s, color);
                 break;
@@ -142,5 +151,15 @@ public static class SkillIcons
         var side = new Vector2(-dir.Y, dir.X);
         canvas.DrawLine(to, to - dir * 0.45f * s + side * 0.35f * s, color, Width, true);
         canvas.DrawLine(to, to - dir * 0.45f * s - side * 0.35f * s, color, Width, true);
+    }
+
+    /// <summary>四个尖角的星形轮廓，r 是尖角到中心的距离。</summary>
+    static void Star(CanvasItem canvas, Vector2 c, float r, Color color)
+    {
+        var points = new Vector2[9];
+        for (var i = 0; i < 8; i++)
+            points[i] = c + Vector2.FromAngle(Mathf.Tau * i / 8 - Mathf.Pi / 2) * (i % 2 == 0 ? r : 0.32f * r);
+        points[8] = points[0];
+        canvas.DrawPolyline(points, color, Width, true);
     }
 }

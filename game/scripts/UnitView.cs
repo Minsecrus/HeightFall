@@ -138,7 +138,7 @@ public partial class UnitView : Node3D
                 AddChild(mesh);
                 _projectiles[p.Id] = mesh;
             }
-            mesh.Position = WorldSpace.ProjectilePosition(map, p, frac);
+            mesh.Position = WorldSpace.ProjectilePosition(p, frac);
         }
         foreach (var id in _projectiles.Keys.Where(id => !flying.Contains(id)).ToList())
         {

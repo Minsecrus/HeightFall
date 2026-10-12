@@ -12,7 +12,6 @@ public static class WorldSpace
 {
     public const float LevelHeight = 0.2f;
     public const float LeapArcHeight = 2f;
-    public const float ProjectileHeight = 0.7f;
 
     /// <summary>地形的显示高度（米，含升降动画），由 MapView 提供；未提供时用逻辑高度。</summary>
     public static Func<GridPos, float>? TerrainElevation { get; set; }
@@ -66,11 +65,11 @@ public static class WorldSpace
         return new Vector3(Mathf.Lerp(a.X, b.X, horizontal), y, Mathf.Lerp(a.Z, b.Z, horizontal));
     }
 
-    public static Vector3 ProjectilePosition(GameMap map, Projectile p, float frac)
+    /// <summary>投射物按逻辑层的真实弹道绘制，高度从级换算成米。</summary>
+    public static Vector3 ProjectilePosition(Projectile p, float frac)
     {
         var x = Mathf.Lerp(p.PrevPosition.X, p.Position.X, frac);
         var y = Mathf.Lerp(p.PrevPosition.Y, p.Position.Y, frac);
-        var tile = new GridPos(Mathf.FloorToInt(x), Mathf.FloorToInt(y));
-        return new Vector3(x, GroundAt(map, tile) + ProjectileHeight, -y);
+        return new Vector3(x, Mathf.Lerp(p.PrevHeight, p.Height, frac) * LevelHeight, -y);
     }
 }

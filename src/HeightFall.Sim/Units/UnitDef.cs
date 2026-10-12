@@ -16,13 +16,11 @@ public enum UnitKind
 
 public enum DamageType
 {
-    /// <summary>受护甲减免。</summary>
+    /// <summary>按物攻计算，受物防减免。坠落伤害也是物理伤害。</summary>
     Physical,
 
-    /// <summary>受魔抗减免。</summary>
+    /// <summary>按法攻计算，受法防减免。</summary>
     Magic,
-
-    Pure,
 }
 
 public static class UnitKindExtensions
@@ -48,6 +46,9 @@ public sealed record UnitDef
     public bool BlocksTiles { get; init; } = true;
     public bool Invulnerable { get; init; }
 
+    /// <summary>模型高度（级，1 级 = 0.2 m）。投射物瞄准模型的一半高度。</summary>
+    public float BodyHeight { get; init; }
+
     public float MaxHp { get; init; }
     public float HpPerLevel { get; init; }
     public float HpRegen { get; init; }
@@ -56,25 +57,36 @@ public sealed record UnitDef
     public float ManaRegen { get; init; }
     public float ManaRegenPerLevel { get; init; }
 
-    public float Damage { get; init; }
-    public float DamagePerLevel { get; init; }
+    /// <summary>物攻：普攻伤害，也是物理技能伤害百分比的基数。</summary>
+    public float PhysicalAttack { get; init; }
+    public float PhysicalAttackPerLevel { get; init; }
+
+    /// <summary>法攻：法术技能伤害百分比的基数。</summary>
+    public float MagicAttack { get; init; }
+    public float MagicAttackPerLevel { get; init; }
+
     public float AttackRange { get; init; }
     public float AttackInterval { get; init; } = 1f;
 
     /// <summary>投射物速度（格/秒）；为 0 时是近战，攻击立即生效。</summary>
     public float ProjectileSpeed { get; init; }
 
-    public float Armor { get; init; }
-    public float ArmorPerLevel { get; init; }
+    /// <summary>投射物出手点比单位所在格高出的级数。</summary>
+    public float LaunchHeight { get; init; }
 
-    /// <summary>魔法伤害减免比例，0–1。</summary>
-    public float MagicResist { get; init; }
+    /// <summary>投射物走抛物线（可以越过地形）；否则走直线，会被路径上更高的地形挡住。</summary>
+    public bool ArcingProjectile { get; init; }
+
+    /// <summary>物防和法防按同一公式减免对应类型的伤害。</summary>
+    public float PhysicalDefense { get; init; }
+    public float PhysicalDefensePerLevel { get; init; }
+    public float MagicDefense { get; init; }
+    public float MagicDefensePerLevel { get; init; }
 
     public float MoveSpeed { get; init; }
 
-    /// <summary>被击杀时给予的金钱和经验。</summary>
+    /// <summary>被击杀时给予击杀者的金币；英雄获得金币时同时获得等量经验。</summary>
     public int Gold { get; init; }
-    public int Xp { get; init; }
 
     public IReadOnlyList<SkillDef> Skills { get; init; } = [];
 }

@@ -22,7 +22,8 @@ public partial class MapView : Node3D
     const float Gap = 0.06f;
 
     /// <summary>柱子底部和底板的高度。</summary>
-    const float FloorY = -2f;
+    /// <summary>柱子延伸到地面下 2 m 的底板。</summary>
+    static readonly float FloorY = WorldSpace.Elevation(HeightRules.Ground) - 2f;
 
     static readonly Color FloorColor = new("#E6E8EA");
 

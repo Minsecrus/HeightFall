@@ -20,13 +20,14 @@ public enum EffectTargets
     Caster,
 }
 
-/// <summary>对范围内的单位造成伤害。</summary>
-public sealed record DamageEffect(float[] Amount, DamageType Type, EffectTargets Targets = EffectTargets.Enemies) : SkillEffect
+/// <summary>对范围内的单位造成伤害：施法者对应攻击（物理按物攻、法术按法攻）的百分比，随技能等级变化。</summary>
+public sealed record DamageEffect(float[] Percent, DamageType Type, EffectTargets Targets = EffectTargets.Enemies) : SkillEffect
 {
     internal override void Apply(World world, SkillCast cast)
     {
+        var amount = cast.Caster.Attack(Type) * Percent.At(cast.Level) / 100f;
         foreach (var unit in world.UnitsAffected(cast, Targets))
-            world.DealDamage(cast.Caster, unit, Amount.At(cast.Level), Type, fromSkill: true);
+            world.DealDamage(cast.Caster, unit, amount, Type, fromSkill: true);
     }
 }
 

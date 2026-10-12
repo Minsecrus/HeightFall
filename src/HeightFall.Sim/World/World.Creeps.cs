@@ -49,6 +49,6 @@ public sealed partial class World
         if (Tick == 0 || Tick % SimTime.Ticks(GameRules.PassiveGoldIntervalSeconds) != 0)
             return;
         foreach (var hero in _units.Where(u => u.IsHero))
-            hero.Gold += GameRules.PassiveGold;
+            Earn(hero, GameRules.PassiveGold);
     }
 }

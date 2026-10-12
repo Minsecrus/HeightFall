@@ -17,11 +17,13 @@ public class ShopTests
             hero.SpeedBonusTicks = 30;
 
             Assert.Empty(hero.Items);
-            Assert.Equal(0, hero.Gold);
+            Assert.Equal(GameRules.StartingGold, hero.Gold);
             Assert.Equal((definition.MaxHp + definition.HpPerLevel * 6) * 1.3f, hero.MaxHp);
             Assert.Equal(definition.MaxMana + definition.ManaPerLevel * 6, hero.MaxMana);
-            Assert.Equal((definition.Damage + definition.DamagePerLevel * 6) * 1.3f, hero.Damage);
-            Assert.Equal(definition.Armor + definition.ArmorPerLevel * 6, hero.Armor);
+            Assert.Equal((definition.PhysicalAttack + definition.PhysicalAttackPerLevel * 6) * 1.3f, hero.PhysicalAttack);
+            Assert.Equal((definition.MagicAttack + definition.MagicAttackPerLevel * 6) * 1.3f, hero.MagicAttack);
+            Assert.Equal(definition.PhysicalDefense + definition.PhysicalDefensePerLevel * 6, hero.PhysicalDefense);
+            Assert.Equal(definition.MagicDefense + definition.MagicDefensePerLevel * 6, hero.MagicDefense);
             Assert.Equal(definition.MoveSpeed * 1.4f, hero.MoveSpeed);
         }
     }
@@ -36,7 +38,7 @@ public class ShopTests
         hero.Mana = hero.MaxMana * 0.3f;
         hero.SpeedBonus = 0.5f;
         hero.SpeedBonusTicks = 30;
-        var equipment = new[] { Items.All[0], Items.All[3], Items.All[4], Items.All[5], Items.All[7] };
+        var equipment = new[] { Item("短剑"), Item("生命石"), Item("能量石"), Item("护盾"), Item("轻靴") };
 
         foreach (var item in equipment)
         {
@@ -50,8 +52,8 @@ public class ShopTests
         Assert.Equal(equipment, hero.Items);
         Assert.Equal(840, hero.MaxHp);
         Assert.Equal(420, hero.MaxMana);
-        Assert.Equal(67, hero.Damage);
-        Assert.Equal(7, hero.Armor);
+        Assert.Equal(67, hero.PhysicalAttack);
+        Assert.Equal(7, hero.PhysicalDefense);
         Assert.Equal(3.35f * 1.5f, hero.MoveSpeed);
 
         Assert.True(world.SellItem(hero, 1));
@@ -95,7 +97,7 @@ public class ShopTests
                 break;
             case "removed": hero.IsRemoved = true; break;
             case "nonhero": hero = world.Units.First(u => u.IsStructure); hero.Gold = 2000; break;
-            case "forged": item = new("短剑", "sword", -200, ItemCategory.Attack, DamageBonus: 99999); break;
+            case "forged": item = new("短剑", "sword", -200, ItemCategory.Attack, PhysicalAttackBonus: 99999); break;
             case "cloned": item = item with { }; break;
             case "null": item = null!; break;
         }
@@ -114,17 +116,17 @@ public class ShopTests
         hero.Gold = 2000;
         for (var i = 0; i < Unit.InventoryCapacity; i++)
             Assert.True(world.BuyItem(hero, Items.All[0]));
-        Assert.Equal(127, hero.Damage);
+        Assert.Equal(127, hero.PhysicalAttack);
         Assert.Equal(800, hero.Gold);
 
         Assert.True(world.SellItem(hero, 3));
         Assert.Equal(5, hero.Items.Count);
         Assert.All(hero.Items, item => Assert.Same(Items.All[0], item));
-        Assert.Equal(115, hero.Damage);
+        Assert.Equal(115, hero.PhysicalAttack);
         Assert.Equal(940, hero.Gold);
         Assert.True(world.BuyItem(hero, Items.All[0]));
         Assert.Equal(740, hero.Gold);
-        Assert.Equal(127, hero.Damage);
+        Assert.Equal(127, hero.PhysicalAttack);
     }
 
     [Fact]
@@ -133,7 +135,7 @@ public class ShopTests
         var world = new World(StandardMap.Build());
         var hero = world.SpawnHero(Heroes.Bastion, Team.Heights);
         hero.Gold = 1000;
-        Assert.True(world.BuyItem(hero, Items.All[6]));
+        Assert.True(world.BuyItem(hero, Item("重甲")));
         var before = Snapshot(hero);
         foreach (var slot in new[] { -1, 1, Unit.InventoryCapacity, int.MaxValue })
         {
@@ -156,10 +158,10 @@ public class ShopTests
         var hero = world.SpawnHero(Heroes.Bastion, Team.Heights);
         var enemy = world.SpawnHero(Heroes.Falcon, Team.Fall);
         hero.Gold = 1000;
-        world.DealDamage(enemy, hero, hero.MaxHp, DamageType.Pure);
+        world.DealDamage(enemy, hero, hero.MaxHp * 10, DamageType.Physical);
         var respawnTicks = hero.RespawnTicks;
 
-        Assert.True(world.BuyItem(hero, Items.All[3]));
+        Assert.True(world.BuyItem(hero, Item("生命石")));
         Assert.True(hero.IsDead);
         Assert.Equal(0, hero.Hp);
         Assert.Equal(respawnTicks, hero.RespawnTicks);
@@ -167,8 +169,8 @@ public class ShopTests
         Assert.True(hero.IsDead);
         Assert.Equal(0, hero.Hp);
         Assert.Equal(respawnTicks, hero.RespawnTicks);
-        Assert.True(world.BuyItem(hero, Items.All[3]));
-        Assert.True(world.BuyItem(hero, Items.All[4]));
+        Assert.True(world.BuyItem(hero, Item("生命石")));
+        Assert.True(world.BuyItem(hero, Item("能量石")));
 
         for (var i = 0; i < respawnTicks; i++)
             world.Step();
@@ -189,10 +191,12 @@ public class ShopTests
         var catalog = Assert.IsAssignableFrom<IList<ItemDef>>(Items.All);
         Assert.Throws<NotSupportedException>(() => catalog.Clear());
         Assert.Empty(hero.Items);
-        Assert.Equal(9, Items.All.Count);
+        Assert.Equal(14, Items.All.Count);
     }
 
+    static ItemDef Item(string name) => Items.All.Single(item => item.Name == name);
+
     static string Snapshot(Unit hero) => string.Join("|", hero.Gold, hero.Hp, hero.Mana,
-        hero.MaxHp, hero.MaxMana, hero.Damage, hero.Armor, hero.MoveSpeed,
+        hero.MaxHp, hero.MaxMana, hero.PhysicalAttack, hero.MagicAttack, hero.PhysicalDefense, hero.MagicDefense, hero.MoveSpeed,
         string.Join(",", hero.Items.Select(item => item.Name)));
 }

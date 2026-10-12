@@ -37,7 +37,7 @@ public static class Summoners
         Area = new CircleSelector(1),
         Effects =
         [
-            new DamageEffect([600], DamageType.Pure, EffectTargets.EnemyCreeps),
+            new DamageEffect([1000], DamageType.Physical, EffectTargets.EnemyCreeps),
             new StunEffect([1f], EffectTargets.EnemyCreeps),
         ],
         Cooldown = [30], ManaCost = [0], CastPoint = 0f,

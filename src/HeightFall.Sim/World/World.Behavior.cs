@@ -112,7 +112,7 @@ public sealed partial class World
 
         if (u.IsStructure)
         {
-            if (u.Def.Damage > 0)
+            if (u.Def.PhysicalAttack > 0)
                 UpdateTower(u);
         }
         else if (u.IsCreep)
@@ -127,6 +127,11 @@ public sealed partial class World
 
     void Regenerate(Unit u)
     {
+        if (u.IsStructure)
+        {
+            RegenerateStructure(u);
+            return;
+        }
         if (!u.IsHero)
             return;
         var hpRegen = u.Def.HpRegen;
@@ -154,20 +159,22 @@ public sealed partial class World
         hero.IsDead = false;
         hero.Hp = hero.MaxHp;
         hero.Mana = hero.MaxMana;
+        hero.LastEnemyHeroDamager = null;
         Occupy(hero);
     }
 
-    /// <summary>防御塔和泉水：优先打刚攻击过己方英雄的敌方英雄，其次打小兵，最后打英雄。</summary>
+    /// <summary>
+    /// 防御塔和泉水：优先打刚攻击过己方英雄的敌方英雄，其次打小兵，最后打英雄。不能移动，只选弹道打得到的目标。
+    /// </summary>
     void UpdateTower(Unit tower)
     {
         var range = tower.Def.AttackRange;
-        var aggroHero = AggroHero(tower, range);
-
         var target = tower.AttackTarget;
-        if (aggroHero is not null)
+        if (AggroHero(tower, range, mustHit: true) is { } aggroHero)
             target = aggroHero;
-        else if (target is null || !IsValidTarget(tower, target) || Distance(tower, target) > range)
-            target = NearestInRange(tower, range, heroes: false) ?? NearestInRange(tower, range, heroes: true);
+        else if (target is null || !IsValidTarget(tower, target) || Distance(tower, target) > range || !CanHit(tower, target))
+            target = NearestEnemy(tower, range, mustHit: true, u => !u.IsHero && !u.IsStructure)
+                ?? NearestEnemy(tower, range, mustHit: true, u => u.IsHero);
 
         tower.AttackTarget = target;
         if (target is not null)
@@ -175,27 +182,8 @@ public sealed partial class World
     }
 
     /// <summary>范围内刚攻击过 u 方英雄的敌方英雄。</summary>
-    Unit? AggroHero(Unit u, float range) => _units.FirstOrDefault(e =>
-        e.IsHero && IsValidTarget(u, e) && Distance(u, e) <= range
-        && Tick - e.LastAttackedHeroTick < SimTime.Ticks(GameRules.HeroAggroSeconds));
-
-    Unit? NearestInRange(Unit u, float range, bool heroes)
-    {
-        Unit? best = null;
-        var bestDistance = float.MaxValue;
-        foreach (var other in _units)
-        {
-            if (other.IsHero != heroes || !IsValidTarget(u, other))
-                continue;
-            var d = Distance(u, other);
-            if (d <= range && d < bestDistance)
-            {
-                best = other;
-                bestDistance = d;
-            }
-        }
-        return best;
-    }
+    Unit? AggroHero(Unit u, float range, bool mustHit) => NearestEnemy(u, range, mustHit,
+        e => e.IsHero && Tick - e.LastAttackedHeroTick < SimTime.Ticks(GameRules.HeroAggroSeconds));
 
     /// <summary>
     /// 小兵：优先打刚攻击过己方英雄的敌方英雄，其次打小兵和建筑，附近没有别的目标时才打英雄；
@@ -207,10 +195,11 @@ public sealed partial class World
         var target = creep.AttackTarget;
         if (target is not null && (!IsValidTarget(creep, target) || Distance(creep, target) > GameRules.CreepLeashRange))
             target = null;
-        if (AggroHero(creep, range) is { } aggroHero)
+        if (AggroHero(creep, range, mustHit: false) is { } aggroHero)
             target = aggroHero;
         else if (target is null || target.IsHero)
-            target = NearestInRange(creep, range, heroes: false) ?? target ?? NearestInRange(creep, range, heroes: true);
+            target = NearestEnemy(creep, range, mustHit: false, u => !u.IsHero) ?? target
+                ?? NearestEnemy(creep, range, mustHit: false, u => u.IsHero);
         creep.AttackTarget = target;
 
         if (target is not null)
@@ -273,12 +262,12 @@ public sealed partial class World
         Emit(new RecallEvent(hero));
     }
 
-    /// <summary>空闲的英雄自动攻击射程内的敌人，但不追击；有驻守点时走回驻守点。</summary>
+    /// <summary>空闲的英雄自动攻击射程内打得到的敌人，但不追击；有驻守点时走回驻守点。</summary>
     void UpdateIdleHero(Unit hero)
     {
         var target = hero.AttackTarget;
-        if (target is null || !IsValidTarget(hero, target) || Distance(hero, target) > hero.Def.AttackRange)
-            target = NearestEnemy(hero, hero.Def.AttackRange);
+        if (target is null || !IsValidTarget(hero, target) || Distance(hero, target) > hero.Def.AttackRange || !CanHit(hero, target))
+            target = NearestEnemy(hero, hero.Def.AttackRange, mustHit: true);
         hero.AttackTarget = target;
 
         if (target is not null)

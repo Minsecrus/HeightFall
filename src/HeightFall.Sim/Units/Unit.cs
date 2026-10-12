@@ -101,11 +101,19 @@ public sealed class Unit
     public int RespawnTicks { get; internal set; }
     public bool IsRemoved { get; internal set; }
 
+    /// <summary>建筑受攻击顺序保护：不能被选为目标，也不受伤害。</summary>
+    public bool IsShielded { get; internal set; }
+
     /// <summary>空闲时返回的驻守点。</summary>
     public GridPos? Post { get; internal set; }
 
     internal float StatScale { get; set; } = 1f;
     internal int LastAttackedHeroTick { get; set; } = int.MinValue / 2;
+
+    /// <summary>
+    /// 这一生中最后一个对它造成伤害的敌方英雄，用于击杀归属；中立单位不分敌我，记任意英雄。复活时清空。
+    /// </summary>
+    internal Unit? LastEnemyHeroDamager { get; set; }
 
     internal List<GridPos>? Path { get; set; }
     internal int PathIndex { get; set; }
@@ -134,10 +142,17 @@ public sealed class Unit
         + ItemValues.Sum(item => item.HpBonus);
     public float MaxMana => Def.MaxMana + Def.ManaPerLevel * (Level - 1)
         + ItemValues.Sum(item => item.ManaBonus);
-    public float Damage => (Def.Damage + Def.DamagePerLevel * (Level - 1)) * StatScale
-        + ItemValues.Sum(item => item.DamageBonus);
-    public float Armor => Def.Armor + Def.ArmorPerLevel * (Level - 1)
-        + ItemValues.Sum(item => item.ArmorBonus);
+    public float PhysicalAttack => (Def.PhysicalAttack + Def.PhysicalAttackPerLevel * (Level - 1)) * StatScale
+        + ItemValues.Sum(item => item.PhysicalAttackBonus);
+    public float MagicAttack => (Def.MagicAttack + Def.MagicAttackPerLevel * (Level - 1)) * StatScale
+        + ItemValues.Sum(item => item.MagicAttackBonus);
+    public float PhysicalDefense => Def.PhysicalDefense + Def.PhysicalDefensePerLevel * (Level - 1)
+        + ItemValues.Sum(item => item.PhysicalDefenseBonus);
+    public float MagicDefense => Def.MagicDefense + Def.MagicDefensePerLevel * (Level - 1)
+        + ItemValues.Sum(item => item.MagicDefenseBonus);
+
+    public float Attack(DamageType type) => type == DamageType.Physical ? PhysicalAttack : MagicAttack;
+    public float Defense(DamageType type) => type == DamageType.Physical ? PhysicalDefense : MagicDefense;
 
     /// <summary>格子坐标系中的中心点，格子 (x, y) 的中心是 (x + 0.5, y + 0.5)。</summary>
     public Vector2 Center => new(Pos.X + Size / 2f, Pos.Y + Size / 2f);

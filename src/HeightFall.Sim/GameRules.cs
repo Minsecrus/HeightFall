@@ -8,12 +8,19 @@ public static class GameRules
     /// <summary>大招第 1、2、3 级分别需要的英雄等级。</summary>
     public static readonly int[] UltimateLevels = [6, 12, 18];
 
-    public const float XpShareRadius = 12f;
     public const float DenyHpFraction = 0.5f;
-    public const float DenyXpFactor = 0.5f;
+
+    /// <summary>击杀记给最后伤害过死者的敌方英雄、但最后一击不是他时，金币按这个比例发放。</summary>
+    public const float CreditedKillGoldFactor = 0.7f;
     public const int StructureGold = 100;
+    public const int StartingGold = 300;
     public const float PassiveGoldIntervalSeconds = 2f;
     public const int PassiveGold = 3;
+
+    /// <summary>后门保护：建筑这么远内没有敌方小兵时，受到的伤害降低，并每秒回复最大生命的一定比例。</summary>
+    public const float BackdoorRadius = 10f;
+    public const float BackdoorDamageReduction = 0.4f;
+    public const float BackdoorRegenPerSecond = 0.01f;
 
     public const float FountainHealPerSecond = 0.05f;
 
@@ -35,11 +42,10 @@ public static class GameRules
     public const float CreepAggroRange = 5f;
     public const float CreepLeashRange = 8f;
 
+    /// <summary>升到下一级所需经验；英雄获得多少金币就获得多少经验。</summary>
     public static int XpToNext(int level) => 200 + 120 * (level - 1);
 
     public static float RespawnSeconds(int level) => 4 + 2 * level;
 
     public static int HeroKillGold(int level) => 200 + 10 * level;
-
-    public static int HeroKillXp(int level) => 100 + 25 * level;
 }
