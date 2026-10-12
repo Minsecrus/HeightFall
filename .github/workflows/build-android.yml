@@ -1,0 +1,117 @@
+name: Build Android APK
+
+# 发版时构建：推送 v 开头的标签（如 v0.2.0）会构建 APK 并发布到 Releases；也可以手动触发试跑。
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  GODOT_VERSION: 4.7.2
+  GODOT_EDITOR_SHA512: 1855960b27ee3ef5e66e5e228cced69d55637b24334a7411162687dcd077d8f9f645348cdb8eae984bec8135d49ed855a1e3a16476786b8bce60774fd8402d13
+  GODOT_TEMPLATES_SHA512: bb5c41d72370ed743660361f6228006f808ab04ca33abdc545d740b044f3fe057f32ae8cb7873a1bc86ddcd82ae683b9f6dfdfe4179852f2c0f1acde2ff6bd5a
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - name: Test simulation
+        run: dotnet test tests/HeightFall.Sim.Tests/HeightFall.Sim.Tests.csproj -c Release --nologo
+      - name: Cache Godot editor and Android templates
+        id: godot-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/godot-downloads
+          key: godot-${{ env.GODOT_VERSION }}-mono-linux-android-${{ env.GODOT_EDITOR_SHA512 }}
+      - name: Download and verify Godot
+        if: steps.godot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot-downloads && cd ~/godot-downloads
+          base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable"
+          curl -fsSL --retry 5 -o editor.zip "$base/Godot_v${GODOT_VERSION}-stable_mono_linux_x86_64.zip"
+          curl -fsSL --retry 5 -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_mono_export_templates.tpz"
+          echo "$GODOT_EDITOR_SHA512  editor.zip" | sha512sum -c
+          echo "$GODOT_TEMPLATES_SHA512  templates.tpz" | sha512sum -c
+          # 只缓存 Android 模板，其余平台用不到
+          unzip -q templates.tpz 'templates/android_*' 'templates/version.txt'
+          rm templates.tpz
+      - name: Install Godot
+        run: |
+          unzip -q -o ~/godot-downloads/editor.zip -d ~/godot
+          godot="$(find ~/godot -maxdepth 2 -type f -name "Godot_v${GODOT_VERSION}-stable_mono_linux*.x86_64" | head -n 1)"
+          test -x "$godot"
+          echo "GODOT=$godot" >> "$GITHUB_ENV"
+          templates=~/.local/share/godot/export_templates/"$(tr -d '\r\n' < ~/godot-downloads/templates/version.txt)"
+          mkdir -p "$templates"
+          cp ~/godot-downloads/templates/android_* "$templates/"
+          mkdir -p ~/.config/godot
+          cat > ~/.config/godot/editor_settings-4.7.tres <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          EOF
+      - name: Set version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          sed -i "s|^version/name=.*|version/name=\"${GITHUB_REF_NAME#v}\"|; s|^version/code=.*|version/code=${GITHUB_RUN_NUMBER}|" game/export_presets.cfg
+          grep -E '^version/(name|code)=' game/export_presets.cfg
+      - name: Export APK
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          # 配置了发布签名密钥时导出发布包；否则用本次生成的调试签名导出调试包
+          if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
+            echo "$RELEASE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/release.keystore"
+            mode=release
+          else
+            keytool -genkeypair -keystore "$RUNNER_TEMP/debug.keystore" -storepass android -alias androiddebugkey \
+              -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            export GODOT_ANDROID_KEYSTORE_DEBUG_PATH="$RUNNER_TEMP/debug.keystore"
+            export GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey
+            export GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android
+            mode=debug
+          fi
+          name="HeightFall-${GITHUB_REF_NAME//\//-}"
+          mkdir -p build
+          "$GODOT" --headless --path game --export-$mode Android "$PWD/build/$name.apk"
+          test -s "build/$name.apk"
+          echo "EXPORT_MODE=$mode" >> "$GITHUB_ENV"
+          echo "APK=build/$name.apk" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: HeightFall-android
+          path: ${{ env.APK }}
+          if-no-files-found: error
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="Android arm64 安装包。"
+          if [ "$EXPORT_MODE" = debug ]; then
+            notes="Android arm64 安装包（调试签名：仓库没有配置发布签名密钥，每次签名都不同，升级前需先卸载旧版本）。"
+          fi
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$APK" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" "$APK" --title "$GITHUB_REF_NAME" --notes "$notes" --verify-tag
+          fi

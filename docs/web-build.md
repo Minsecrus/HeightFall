@@ -142,6 +142,8 @@ Windows、Linux、macOS、Android、iOS 和 Web 是这套 Godot 源代码的移�
 
 Android 导出需要 Godot 4.7.2 .NET 版的 Android 导出模板、Android SDK，以及编辑器设置中的 Java SDK 路径。该版本的 .NET Android 模板运行在 .NET 9 上，因此 `game/HeightFall.csproj` 在 `GodotTargetPlatform` 为 `android` 时改用 `net9.0`；项目设置已开启 Android 必需的 ETC2 / ASTC 纹理导入。通过 WinGet 安装的 Godot 需要用安装目录中的真实可执行文件导出，经由 `WinGet\Links` 中的链接启动时会找不到 `GodotSharp`。
 
+Android 只在发版时构建：推送 `v` 开头的标签（例如 `git tag v0.2.0 && git push origin v0.2.0`）会触发 `.github/workflows/build-android.yml`，先跑模拟层测试，再下载并校验 Godot 4.7.2 .NET 编辑器和导出模板，导出 arm64 APK 并发布到 GitHub Releases；也可以在 Actions 页面手动触发试跑，APK 只作为构建产物下载。版本名取自标签，版本号取工作流运行序号。仓库 Secrets 配置了 `ANDROID_RELEASE_KEYSTORE_BASE64`（Base64 编码的密钥库）、`ANDROID_RELEASE_KEY_ALIAS` 和 `ANDROID_RELEASE_KEYSTORE_PASSWORD` 时导出发布包；没有配置时用当次生成的调试签名，每次签名都不同，已安装旧版本的设备需要先卸载才能安装新版本。
+
 本次触屏、HUD 和商店改动可先运行以下检查；命令列出的是验证入口，不表示本次所有检查已经完成：
 
 ```powershell
