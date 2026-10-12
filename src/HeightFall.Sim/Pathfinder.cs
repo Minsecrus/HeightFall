@@ -11,6 +11,12 @@ internal sealed class Pathfinder
     /// <summary>把秒折算成格数时假设的移速。</summary>
     const float TilesPerSecond = 3f;
 
+    /// <summary>
+    /// 终点被占时注定到不了，只需找离它最近的格子；最多展开这么多格，免得搜遍整张图。
+    /// 网页版的 C# 在 wasm 解释器里运行，一次全图搜索会让手机卡顿几百毫秒。
+    /// </summary>
+    const int BlockedGoalSearchLimit = 1024;
+
     readonly GameMap _map;
     readonly float[] _cost;
     readonly int[] _parent;
@@ -46,6 +52,8 @@ internal sealed class Pathfinder
 
         var best = startIndex;
         var bestH = Heuristic(start, goal);
+        var goalBlocked = goalIndex >= 0 && !allowBlockedGoal && blocked(goal);
+        var expanded = 0;
         while (_open.TryDequeue(out var current, out _))
         {
             if (_closed[current] == _stamp)
@@ -59,6 +67,9 @@ internal sealed class Pathfinder
                 best = current;
             }
             if (current == goalIndex)
+                break;
+            // 被占的终点不会出队；与它正交相邻（h = 1）的格子已是最近，继续搜索也不会更好。
+            if (goalBlocked && (h <= 1f || ++expanded >= BlockedGoalSearchLimit))
                 break;
 
             foreach (var d in GridPos.Neighbors8)
